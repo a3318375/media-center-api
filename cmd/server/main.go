@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,39 +13,66 @@ import (
 	"time"
 
 	"media-center/internal/httpapi"
+	"media-center/internal/pansoubridge"
 	"media-center/internal/store"
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	dataDir := os.Getenv("MEDIA_CENTER_DATA_DIR")
 	if dataDir == "" {
 		dataDir = "./data"
 	}
 	db, err := store.Open(filepath.Clean(dataDir))
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer db.Close()
+	search, err := pansoubridge.New(filepath.Clean(dataDir))
+	if err != nil {
+		return fmt.Errorf("initialize PanSou in-process search: %w", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := search.Shutdown(ctx); err != nil {
+			log.Printf("PanSou shutdown: %v", err)
+		}
+	}()
 
 	addr := os.Getenv("HTTP_ADDR")
 	if addr == "" {
 		addr = ":18080"
 	}
-	server := &http.Server{Addr: addr, Handler: httpapi.NewRouter(db), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
-
+	server := &http.Server{Addr: addr, Handler: httpapi.NewRouter(db, search.Handler()), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	serverDone := make(chan error, 1)
+	go func() { serverDone <- server.ListenAndServe() }()
 	stopped := make(chan os.Signal, 1)
 	signal.Notify(stopped, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-stopped
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := server.Shutdown(ctx); err != nil {
-			log.Printf("server shutdown: %v", err)
-		}
-	}()
-
+	defer signal.Stop(stopped)
 	log.Printf("media-center API listening on %s (data: %s)", addr, dataDir)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
+
+	select {
+	case err := <-serverDone:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-stopped:
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		_ = server.Close()
+		return fmt.Errorf("HTTP server shutdown: %w", err)
+	}
+	if err := <-serverDone; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }

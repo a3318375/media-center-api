@@ -44,7 +44,7 @@ type authUser struct {
 	Avatar  string `json:"avatar"`
 }
 
-func NewRouter(db *store.Store) *gin.Engine {
+func NewRouter(db *store.Store, resourceSearch ...gin.HandlerFunc) *gin.Engine {
 	api := &API{store: db, tmdb: tmdb.NewClient()}
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
@@ -81,6 +81,9 @@ func NewRouter(db *store.Store) *gin.Engine {
 	// and managed API keys. Feature modules (search, downloads, etc.) mount here.
 	v1 := router.Group("/api/v1", api.requireAPI())
 	v1.GET("/whoami", api.apiWhoAmI)
+	if len(resourceSearch) > 0 && resourceSearch[0] != nil {
+		v1.POST("/resources/search", resourceSearch[0])
+	}
 	return router
 }
 

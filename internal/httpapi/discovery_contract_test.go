@@ -82,7 +82,12 @@ func TestNewMediaRoutesRequireUser(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer db.Close()
-	r := NewRouter(db)
+	r := NewRouter(db, func(c *gin.Context) { c.Status(204) })
+	wSearch := httptest.NewRecorder()
+	r.ServeHTTP(wSearch, httptest.NewRequest("POST", "/api/v1/resources/search", strings.NewReader(`{"query":"test"}`)))
+	if wSearch.Code != 401 {
+		t.Fatal(wSearch.Code)
+	}
 	for _, path := range []string{"/api/media/providers", "/api/media/rankings", "/api/media/image?source=douban&url=https://img1.doubanio.com/a.jpg", "/api/media/discover?source=bangumi&mediaType=anime", "/api/media/anilist/9253?mediaType=anime"} {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
