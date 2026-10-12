@@ -81,7 +81,7 @@ func TestSearchDetails(t *testing.T) {
 			if q.Get("append_to_response") != "credits" {
 				t.Error("credits")
 			}
-			w.Write([]byte(`{"id":12,"title":"电影","runtime":90,"genres":[{"id":18,"name":"剧情"}],"credits":{"cast":[{"id":3,"name":"演员","character":"角色"}]}}`))
+			w.Write([]byte(`{"id":12,"title":"电影","runtime":90,"genres":[{"id":18,"name":"剧情"}],"credits":{"cast":[{"id":3,"name":"演员","character":"角色","profile_path":"/actor.jpg"}]}}`))
 		case "/movie/12/external_ids", "/tv/12/external_ids":
 			w.Write([]byte(`{"id":12}`))
 		case "/tv/12":
@@ -96,7 +96,7 @@ func TestSearchDetails(t *testing.T) {
 		t.Fatal(p, e)
 	}
 	m, e := c.Detail(context.Background(), key, "movie", "12")
-	if e != nil || m.RuntimeMinutes == nil || *m.RuntimeMinutes != 90 || len(m.Credits) != 1 {
+	if e != nil || m.RuntimeMinutes == nil || *m.RuntimeMinutes != 90 || len(m.Credits) != 1 || m.Credits[0].ProfilePath == nil || *m.Credits[0].ProfilePath != "/actor.jpg" {
 		t.Fatal(m, e)
 	}
 	tv, e := c.Detail(context.Background(), key, "tv", "12")

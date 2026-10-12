@@ -264,14 +264,16 @@ type record struct {
 	Tagline string `json:"tagline"`
 	Credits struct {
 		Cast []struct {
-			ID        int
-			Name      string
-			Character string
+			ID          int
+			Name        string
+			Character   string
+			ProfilePath *string `json:"profile_path"`
 		}
 		Crew []struct {
-			ID   int
-			Name string
-			Job  string
+			ID          int
+			Name        string
+			Job         string
+			ProfilePath *string `json:"profile_path"`
 		}
 	} `json:"credits"`
 	Seasons []struct {
@@ -446,11 +448,11 @@ func (c *Client) Detail(ctx context.Context, key, kind, id string) (media.Detail
 		if i >= 16 {
 			break
 		}
-		d.Credits = append(d.Credits, media.Credit{Name: p.Name, Role: p.Character, PersonID: fmt.Sprint(p.ID)})
+		d.Credits = append(d.Credits, media.Credit{Name: p.Name, Role: p.Character, PersonID: fmt.Sprint(p.ID), ProfilePath: p.ProfilePath})
 	}
 	for _, p := range r.Credits.Crew {
 		if p.Job == "Director" {
-			d.Credits = append(d.Credits, media.Credit{Name: p.Name, Role: p.Job, PersonID: fmt.Sprint(p.ID)})
+			d.Credits = append(d.Credits, media.Credit{Name: p.Name, Role: p.Job, PersonID: fmt.Sprint(p.ID), ProfilePath: p.ProfilePath})
 		}
 	}
 	for _, s := range r.Seasons {

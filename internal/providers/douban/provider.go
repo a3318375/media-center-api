@@ -210,10 +210,18 @@ func (p *Provider) Detail(ctx context.Context, kind, id, locale string) (media.D
 	}
 	d := media.Detail{Summary: s, Region: strings.Join(r.Countries, ","), Credits: []media.Credit{}}
 	for _, v := range r.Directors {
-		d.Credits = append(d.Credits, media.Credit{Name: v.Name, Role: "导演"})
+		var profilePath *string
+		if v.Avatars.Large != "" {
+			profilePath = &v.Avatars.Large
+		}
+		d.Credits = append(d.Credits, media.Credit{Name: v.Name, Role: "导演", ProfilePath: profilePath})
 	}
 	for _, v := range r.Actors {
-		d.Credits = append(d.Credits, media.Credit{Name: v.Name, Role: "演员"})
+		var profilePath *string
+		if v.Avatars.Large != "" {
+			profilePath = &v.Avatars.Large
+		}
+		d.Credits = append(d.Credits, media.Credit{Name: v.Name, Role: "演员", ProfilePath: profilePath})
 	}
 	if len(r.Durations) > 0 {
 		f := strings.Fields(r.Durations[0])

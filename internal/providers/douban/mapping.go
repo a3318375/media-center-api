@@ -47,15 +47,25 @@ type record struct {
 	Pic struct {
 		Large string `json:"large"`
 	} `json:"pic"`
-	Summary       string                  `json:"summary"`
-	Genres        []string                `json:"genres"`
-	Countries     []string                `json:"countries"`
-	AKA           []string                `json:"aka"`
-	Pubdate       []string                `json:"pubdate"`
-	Durations     []string                `json:"durations"`
-	Directors     []struct{ Name string } `json:"directors"`
-	Actors        []struct{ Name string } `json:"actors"`
-	EpisodesCount int                     `json:"episodes_count"`
+	Summary   string   `json:"summary"`
+	Genres    []string `json:"genres"`
+	Countries []string `json:"countries"`
+	AKA       []string `json:"aka"`
+	Pubdate   []string `json:"pubdate"`
+	Durations []string `json:"durations"`
+	Directors []struct {
+		Name    string `json:"name"`
+		Avatars struct {
+			Large string `json:"large"`
+		} `json:"avatars"`
+	} `json:"directors"`
+	Actors []struct {
+		Name    string `json:"name"`
+		Avatars struct {
+			Large string `json:"large"`
+		} `json:"avatars"`
+	} `json:"actors"`
+	EpisodesCount int `json:"episodes_count"`
 }
 
 func nativeKind(r record, fallback string) string {

@@ -81,9 +81,10 @@ type ExternalIDs struct {
 }
 
 type Credit struct {
-	Name     string `json:"name"`
-	Role     string `json:"role"`
-	PersonID string `json:"personId,omitempty"`
+	Name        string  `json:"name"`
+	Role        string  `json:"role"`
+	PersonID    string  `json:"personId,omitempty"`
+	ProfilePath *string `json:"profilePath,omitempty"`
 }
 
 type Season struct {
