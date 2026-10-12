@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"media-center/internal/store"
+	"media-center/internal/tmdb"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type API struct {
+	tmdb         *tmdb.Client
 	store        *store.Store
 	embyMu       sync.Mutex
 	embyCache    *EmbyDashboardResponse
@@ -35,7 +37,7 @@ type authUser struct {
 }
 
 func NewRouter(db *store.Store) *gin.Engine {
-	api := &API{store: db}
+	api := &API{store: db, tmdb: tmdb.NewClient()}
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 	router.Use(api.requestLog())
@@ -55,6 +57,8 @@ func NewRouter(db *store.Store) *gin.Engine {
 	settings.PUT("/:section", api.putSettings)
 	router.GET("/api/emby/dashboard", api.requireUser(), api.embyDashboard)
 	router.GET("/api/emby/items/:id/image", api.requireUser(), api.embyImage)
+	router.GET("/api/media/discover", api.requireUser(), api.discoverMedia)
+	router.GET("/api/media/:source/:sourceId", api.requireUser(), api.detailMedia)
 	router.GET("/api/logs", api.requireUser(), api.listLogs)
 
 	keys := auth.Group("/api-keys", api.requireUser())
@@ -402,7 +406,7 @@ func fail(c *gin.Context, status int, message string) {
 
 func validSection(section string) bool {
 	switch section {
-	case "emby", "115", "organize", "search", "notifications":
+	case "tmdb", "emby", "115", "organize", "search", "notifications":
 		return true
 	default:
 		return false

@@ -24,10 +24,12 @@ const (
 
 // Identity keeps our stable key separate from an upstream provider identifier.
 type Identity struct {
-	MediaID   string `json:"mediaId"`
-	Source    Source `json:"source"`
-	SourceID  string `json:"sourceId"`
-	MediaType Type   `json:"mediaType"`
+	MediaID    string `json:"mediaId"`
+	Source     Source `json:"source"`
+	SourceID   string `json:"sourceId"`
+	Provider   Source `json:"provider"`
+	ProviderID string `json:"providerId"`
+	MediaType  Type   `json:"mediaType"`
 }
 
 type Rating struct {
@@ -55,12 +57,18 @@ type Summary struct {
 // Detail extends a summary with fields only needed on a work detail page.
 type Detail struct {
 	Summary
-	RuntimeMinutes *int              `json:"runtimeMinutes,omitempty"`
-	Status         string            `json:"status,omitempty"`
-	Tagline        string            `json:"tagline,omitempty"`
-	ExternalIDs    map[Source]string `json:"externalIds,omitempty"`
-	Credits        []Credit          `json:"credits,omitempty"`
-	Seasons        []Season          `json:"seasons,omitempty"`
+	RuntimeMinutes *int         `json:"runtimeMinutes,omitempty"`
+	Status         string       `json:"status,omitempty"`
+	Tagline        string       `json:"tagline,omitempty"`
+	Region         string       `json:"region,omitempty"`
+	ExternalIDs    *ExternalIDs `json:"externalIds,omitempty"`
+	Credits        []Credit     `json:"credits,omitempty"`
+	Seasons        []Season     `json:"seasons,omitempty"`
+}
+
+type ExternalIDs struct {
+	IMDb string `json:"imdb,omitempty"`
+	TMDB string `json:"tmdb,omitempty"`
 }
 
 type Credit struct {

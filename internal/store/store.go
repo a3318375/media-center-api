@@ -315,9 +315,10 @@ func (s *Store) ListLogs(level, source, query string, limit int) ([]LogEntry, er
 }
 
 var secretSettingNames = map[string]bool{
-	"emby.apiKey":            true,
-	"115.cookie":             true,
-	"notifications.botToken": true,
+	"tmdb.apiKey":                 true,
+	"emby.apiKey":                 true,
+	"115.cookie":                  true,
+	"notifications.botToken":      true,
 	"notifications.webhookSecret": true,
 }
 
