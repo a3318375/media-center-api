@@ -48,7 +48,7 @@ func TestMediaHTTPSettings(t *testing.T) {
 		r.ServeHTTP(w, req)
 		return w
 	}
-	for _, path := range []string{"/api/media/discover?source=tmdb&mediaType=all", "/api/media/discover?source=tmdb&mediaType=movie&pageSize=50", "/api/media/discover?source=tmdb&mediaType=movie&page=abc", "/api/media/discover?source=douban&mediaType=movie"} {
+	for _, path := range []string{"/api/media/discover?source=tmdb&mediaType=all", "/api/media/discover?source=tmdb&mediaType=movie&pageSize=50", "/api/media/discover?source=tmdb&mediaType=movie&page=abc", "/api/media/discover?source=douban&mediaType=all"} {
 		if w := request("GET", path, ""); w.Code != 400 {
 			t.Fatal(path, w.Code)
 		}

@@ -38,8 +38,17 @@ type Rating struct {
 	VoteCount int64   `json:"voteCount,omitempty"`
 }
 
+// Titles preserves provider-native names and synonyms without inventing external IDs.
+type Titles struct {
+	Native   string   `json:"native"`
+	English  string   `json:"english"`
+	Romaji   string   `json:"romaji"`
+	Synonyms []string `json:"synonyms"`
+}
+
 // Summary is the normalized API model used by discovery cards and search results.
 type Summary struct {
+	Titles *Titles `json:"titles,omitempty"`
 	Identity
 	Title            string   `json:"title"`
 	OriginalTitle    string   `json:"originalTitle,omitempty"`

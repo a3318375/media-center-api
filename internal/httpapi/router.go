@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -12,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"media-center/internal/discovery"
+	"media-center/internal/providers/douban"
 	"media-center/internal/store"
 	"media-center/internal/tmdb"
 
@@ -20,12 +23,17 @@ import (
 )
 
 type API struct {
-	tmdb         *tmdb.Client
-	store        *store.Store
-	embyMu       sync.Mutex
-	embyCache    *EmbyDashboardResponse
-	embyCacheKey string
-	embyCachedAt time.Time
+	credentialMu    sync.Mutex
+	tmdbFingerprint [32]byte
+	discoveryMu     sync.Mutex
+	discovery       *discovery.Service
+	doubanImages    *douban.Provider
+	tmdb            *tmdb.Client
+	store           *store.Store
+	embyMu          sync.Mutex
+	embyCache       *EmbyDashboardResponse
+	embyCacheKey    string
+	embyCachedAt    time.Time
 }
 
 type authUser struct {
@@ -57,6 +65,9 @@ func NewRouter(db *store.Store) *gin.Engine {
 	settings.PUT("/:section", api.putSettings)
 	router.GET("/api/emby/dashboard", api.requireUser(), api.embyDashboard)
 	router.GET("/api/emby/items/:id/image", api.requireUser(), api.embyImage)
+	router.GET("/api/media/providers", api.requireUser(), api.mediaProviders)
+	router.GET("/api/media/rankings", api.requireUser(), api.mediaRankings)
+	router.GET("/api/media/image", api.requireUser(), api.mediaImage)
 	router.GET("/api/media/discover", api.requireUser(), api.discoverMedia)
 	router.GET("/api/media/:source/:sourceId", api.requireUser(), api.detailMedia)
 	router.GET("/api/logs", api.requireUser(), api.listLogs)
@@ -77,6 +88,9 @@ func (a *API) requestLog() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		started := time.Now()
 		c.Next()
+		if strings.HasPrefix(c.Request.URL.Path, "/api/media/") && c.Request.Context().Err() == context.Canceled {
+			return
+		}
 		status := c.Writer.Status()
 		level := "INFO"
 		if status >= 500 {
