@@ -6,7 +6,6 @@ import (
 
 	"pansou/model"
 	"pansou/plugin"
-	"pansou/service"
 )
 
 type resourceLink struct {
@@ -30,13 +29,17 @@ type searchData struct {
 	Items        []resourceItem            `json:"items,omitempty"`
 	LinksByCloud map[string][]resourceLink `json:"linksByCloud,omitempty"`
 }
-type searchAdapter struct{ service *service.SearchService }
+type searchService interface {
+	Search(string, []string, int, bool, string, string, []string, []string, map[string]interface{}) (model.SearchResponse, error)
+}
+
+type searchAdapter struct{ service searchService }
 
 // Search translates Media Center concepts to PanSou arguments and maps upstream
 // data into a stable local DTO. No PanSou HTTP contract is exposed.
-func (a searchAdapter) Search(ctx context.Context, keyword, source string, cloudTypes []string, refresh bool) (searchData, error) {
+func (a searchAdapter) Search(ctx context.Context, keyword, source string, cloudTypes, plugins, channels []string, mode string, refresh bool) (searchData, error) {
 	ext := map[string]interface{}{"refresh": refresh, plugin.ExtContextKey: ctx}
-	resp, err := a.service.Search(keyword, nil, 4, refresh, "all", source, nil, cloudTypes, ext)
+	resp, err := a.service.Search(keyword, channels, 4, refresh, mode, source, plugins, cloudTypes, ext)
 	if err != nil {
 		return searchData{}, err
 	}

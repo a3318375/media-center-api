@@ -34,20 +34,20 @@ func TestLiveInProcessSearchPOC(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime.ReadMemStats(&initialized)
-	pluginResult, err := b.Search(context.Background(), "流浪地球2", "plugin", nil, false)
+	pluginResult, err := b.Search(context.Background(), "流浪地球2", "plugin", nil, nil, nil, "merge", false)
 	if err != nil {
 		t.Fatalf("plugin search: %v", err)
 	}
 	first := pluginResult.(searchData)
 	t.Logf("plugin immediate response: total=%d rows=%d links=%d codes=%d heapAlloc=%dMiB", first.Total, len(first.Items), countLinks(first), countPasswords(first), initialized.HeapAlloc>>20)
 	time.Sleep(6 * time.Second)
-	pluginCached, err := b.Search(context.Background(), "流浪地球2", "plugin", nil, false)
+	pluginCached, err := b.Search(context.Background(), "流浪地球2", "plugin", nil, nil, nil, "merge", false)
 	if err != nil {
 		t.Fatalf("plugin repeat search: %v", err)
 	}
 	cached := pluginCached.(searchData)
 	t.Logf("plugin response after async backfill/cache: total=%d rows=%d links=%d codes=%d", cached.Total, len(cached.Items), countLinks(cached), countPasswords(cached))
-	tgResult, err := b.Search(context.Background(), "流浪地球2", "tg", nil, false)
+	tgResult, err := b.Search(context.Background(), "流浪地球2", "tg", nil, nil, nil, "merge", false)
 	if err != nil {
 		t.Fatalf("TG search: %v", err)
 	}

@@ -49,7 +49,7 @@ func run() error {
 	if addr == "" {
 		addr = ":18080"
 	}
-	server := &http.Server{Addr: addr, Handler: httpapi.NewRouter(db, search.Handler()), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: addr, Handler: httpapi.NewRouter(db, search.Handler(), pansoubridge.MetaHandler()), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.ListenAndServe() }()
 	stopped := make(chan os.Signal, 1)

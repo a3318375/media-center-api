@@ -84,6 +84,9 @@ func NewRouter(db *store.Store, resourceSearch ...gin.HandlerFunc) *gin.Engine {
 	if len(resourceSearch) > 0 && resourceSearch[0] != nil {
 		v1.POST("/resources/search", resourceSearch[0])
 	}
+	if len(resourceSearch) > 1 && resourceSearch[1] != nil {
+		v1.GET("/resources/meta", resourceSearch[1])
+	}
 	return router
 }
 
@@ -423,7 +426,7 @@ func fail(c *gin.Context, status int, message string) {
 
 func validSection(section string) bool {
 	switch section {
-	case "tmdb", "emby", "115", "organize", "search", "notifications":
+	case "tmdb", "emby", "115", "organize", "search", "pansou", "notifications":
 		return true
 	default:
 		return false

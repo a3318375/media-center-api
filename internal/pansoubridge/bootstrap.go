@@ -23,6 +23,11 @@ const (
 	asyncLifetime    = 30 * time.Second
 )
 
+// Match the recommended PanSou Web defaults so a fresh Media Center install
+// starts with the same useful TG sources and plugins enabled.
+const recommendedChannels = "tgsearchers7,Aliyun_4K_Movies,yunpanx,yp123pan,yunpanxunlei,tianyifc,peccxinpd,gotopan,PanjClub,baicaoZY,MCPH02,MCPH03,bdwpzhpd,Q66Share,ucwpzy,shareAliyun,Quark_Movies,XiangxiuNBB,ucquark,yingshifenxiang123,zyfb123,Lsp115,taoxgzy,Channel_Shares_115,vip115hot,wp123zy,yunpan139,yunpan189,yunpanuc,yydf_hzl,leoziyuan,yoyokuakeduanju,TG654TG,QukanMovie,yeqingjie_GJG666,movielover8888_film3,Baidu_netdisk,D_wusun,FLMdongtianfudi,KaiPanshare,rjyxfx,PikPak_Share_Channel,newproductsourcing,QuarkFree,yunpanNB,kkdj001,xxzlzn,pxyunpanxunlei,jxwpzy,kuakedongman,xiangnikanj,solidsexydoll,guoman4K,zdqxm,kduanju,cilidianying,CBduanju,SharePanFilms,dzsgx,BooksRealm,douerpan,Netdisk_Movies,yunpanquark,ciliziyuanku,jzmm_123pan,wpan8,mqte5,regengguangya,regeng115,regeng123,yy80986098,pan_guangya,guangyapan_episode,guangya_hdhive,guangyapindao,quark_res,domgmingapk,dianying4k,tgbokee,ucshare,gokuapan,WFYSFX03,gimy100,gimy115iso,fcij5,xvth5,xuexiziliaobaibaoku,phzvip,jdbigdiscount,youxigs,zhoulanziyuan,seedhub_pro,jnjy_5,xxziliao,wpzyk,ruanjianfenxiang77,jpnd5,XunLeiPinDao,a123fxme,WPpindao,kuyupan,djya5,zh_vip,gdsharing,guangyaya2026,alyp_17362,baidyunpan,yunpans,rbzhwpzy,Panzi88com"
+const recommendedPlugins = "dyyjpro,duoduo,feikuai,gaoqing888,gying,hdmoli,haitunsou,hunhepan,ikantv,jutoushe,kkv,libvio,lingjisp,lou1,melost,meitizy,miosou,nyaa,ouge,panlian,pansearch,qqpd,quark4k,quarksoo,quarktv,sousou,thepiratebay,ting77,wanou,weibo,xb6v,xiaokupan,xiaozhang,xiaoyu,yunso,yunsou,zlxapp,zxzj,rrbt,quarkres,diduan,huban,labi,muou,shandian,zhizhen,clxiong,cyg,jsnoteclub,duanjuw,dyyj,nsgame,cldi,clmao,susu,u3c3,5266ys,dygang,leso,btbtlb,kpkuang,aipan,sopanya,hjzhencai,pan365,buerchen,erxiaopan,woniu"
+
 type Bootstrap struct {
 	adapter     searchAdapter
 	cache       *cache.DelayedBatchWriteManager
@@ -55,10 +60,10 @@ func New(dataDir string) (*Bootstrap, error) {
 	setDefault("TG_CHANNEL_REQUEST_TIMEOUT_SECONDS", "8")
 	setDefault("TG_CHANNEL_TIMEOUT_SECONDS", "8")
 	setDefault("OUTBOUND_MAX_CONCURRENCY", "8")
-	setDefault("CHANNELS", "tgsearchers7")
+	setDefault("CHANNELS", recommendedChannels)
 	plugins := strings.TrimSpace(os.Getenv("MEDIA_CENTER_PANSOU_PLUGINS"))
 	if plugins == "" {
-		plugins = "5266ys,quark4k"
+		plugins = recommendedPlugins
 	}
 	_ = os.Setenv("ENABLED_PLUGINS", plugins)
 
@@ -79,9 +84,6 @@ func New(dataDir string) (*Bootstrap, error) {
 	config.AppConfig.TGChannelRequestTimeout = 8 * time.Second
 	config.AppConfig.TGChannelTimeout = 8 * time.Second
 	config.AppConfig.OutboundMaxConcurrency = 8
-	if len(config.AppConfig.DefaultChannels) > 8 {
-		config.AppConfig.DefaultChannels = config.AppConfig.DefaultChannels[:8]
-	}
 	if config.AppConfig.DefaultConcurrency > 4 {
 		config.AppConfig.DefaultConcurrency = 4
 	}
@@ -109,7 +111,7 @@ func setDefault(key, value string) {
 	}
 }
 
-func (b *Bootstrap) Search(parent context.Context, keyword, source string, cloudTypes []string, refresh bool) (interface{}, error) {
+func (b *Bootstrap) Search(parent context.Context, keyword, source string, cloudTypes, plugins, channels []string, mode string, refresh bool) (interface{}, error) {
 	if parent == nil {
 		parent = context.Background()
 	}
@@ -159,7 +161,7 @@ func (b *Bootstrap) Search(parent context.Context, keyword, source string, cloud
 	defer b.active.Done()
 	go func() { <-ctx.Done(); b.mu.Lock(); delete(b.async, id); b.mu.Unlock() }()
 
-	result, err := b.adapter.Search(ctx, keyword, source, cloudTypes, refresh)
+	result, err := b.adapter.Search(ctx, keyword, source, cloudTypes, plugins, channels, mode, refresh)
 	if err != nil {
 		cancel()
 		return nil, err

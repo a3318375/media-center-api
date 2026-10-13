@@ -17,6 +17,9 @@ type searchRequest struct {
 	Query      string   `json:"query"`
 	Source     string   `json:"source"`
 	CloudTypes []string `json:"cloudTypes"`
+	Plugins    []string `json:"plugins"`
+	Channels   []string `json:"channels"`
+	Mode       string   `json:"mode"`
 	Refresh    bool     `json:"refresh"`
 }
 
@@ -41,8 +44,8 @@ func (b *Bootstrap) Handler() gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "source must be all, tg, or plugin"})
 			return
 		}
-		if len(req.CloudTypes) > 4 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "at most 4 cloud types are allowed"})
+		if len(req.CloudTypes) > len(supportedCloudTypes) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "too many cloud types"})
 			return
 		}
 		for _, typ := range req.CloudTypes {
@@ -51,9 +54,30 @@ func (b *Bootstrap) Handler() gin.HandlerFunc {
 				return
 			}
 		}
+		if len(req.Plugins) > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "at most 100 plugins are allowed"})
+			return
+		}
+		if len(req.Channels) > 200 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "at most 200 channels are allowed"})
+			return
+		}
+		for _, name := range append(append([]string{}, req.Plugins...), req.Channels...) {
+			if !cloudTypeRE.MatchString(name) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "plugin and channel names must match ^[a-zA-Z0-9_-]{1,24}$"})
+				return
+			}
+		}
+		if req.Mode == "" {
+			req.Mode = "merge"
+		}
+		if req.Mode != "merge" && req.Mode != "results" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "mode must be merge or results"})
+			return
+		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
 		defer cancel()
-		result, err := b.Search(ctx, req.Query, req.Source, req.CloudTypes, req.Refresh)
+		result, err := b.Search(ctx, req.Query, req.Source, req.CloudTypes, req.Plugins, req.Channels, req.Mode, req.Refresh)
 		if err != nil {
 			status := http.StatusServiceUnavailable
 			if errors.Is(err, context.DeadlineExceeded) {
