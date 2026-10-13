@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http/httptest"
+	"pansou/config"
 	"pansou/model"
 	"strings"
 	"testing"
@@ -18,12 +19,12 @@ func TestHandlerRejectsInvalidRequests(t *testing.T) {
 		`{}`,
 		`{"query":"` + strings.Repeat("a", 121) + `"}`,
 		`{"query":"movie","source":"admin"}`,
-		`{"query":"movie","cloudTypes":["a","b","c","d","e"]}`,
+		`{"query":"movie","cloudTypes":["a","b","c","d","e","f","g","h","i","j","k","l","m","n","o"]}`,
 		`{"query":"movie","cloudTypes":["bad type"]}`,
 		`{"query":"movie","plugins":["bad name"]}`,
 		`{"query":"movie","channels":["bad name"]}`,
 		`{"query":"movie","mode":"invalid"}`,
-		`{"query":"movie","plugins":["a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a","a"]}`,
+		`{"query":"movie","plugins":[` + strings.Repeat(`"a",`, 100) + `"a"]}`,
 	}
 	for _, body := range cases {
 		r := gin.New()
@@ -38,10 +39,14 @@ func TestHandlerRejectsInvalidRequests(t *testing.T) {
 	}
 }
 
-type captureSearch struct{ args []interface{} }
+type captureSearch struct {
+	args []interface{}
+	ext  map[string]interface{}
+}
 
 func (f *captureSearch) Search(keyword string, channels []string, concurrency int, refresh bool, mode, source string, plugins, clouds []string, ext map[string]interface{}) (model.SearchResponse, error) {
 	f.args = []interface{}{keyword, channels, concurrency, refresh, mode, source, plugins, clouds}
+	f.ext = ext
 	return model.SearchResponse{}, nil
 }
 
@@ -64,5 +69,41 @@ func TestMetaHandlerReturnsRegisteredOptions(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/meta", nil))
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"plugins"`) || !strings.Contains(w.Body.String(), `"defaults"`) || !strings.Contains(w.Body.String(), `"cloudTypes"`) {
 		t.Fatalf("unexpected meta response: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdapterAppliesPanSouHTTPDefaults(t *testing.T) {
+	previous := config.AppConfig
+	defer func() { config.AppConfig = previous }()
+	config.AppConfig = &config.Config{DefaultChannels: []string{"channel1", "channel2"}}
+	for _, source := range []string{"all", "tg", "plugin"} {
+		t.Run(source, func(t *testing.T) {
+			fake := &captureSearch{}
+			_, err := (searchAdapter{service: fake}).Search(context.Background(), "movie", source, nil, nil, nil, "merge", false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			channels := fake.args[1].([]string)
+			if source == "plugin" && len(channels) != 0 {
+				t.Fatalf("plugin-only search received channels: %v", channels)
+			}
+			if source != "plugin" && (len(channels) != 2 || channels[0] != "channel1") {
+				t.Fatalf("default TG channels missing: %v", channels)
+			}
+			if fake.args[4] != "merged_by_type" || fake.args[3] != false {
+				t.Fatalf("mode/refresh mismatch: %v", fake.args)
+			}
+			if fake.ext["referer"] != "https://dm.xueximeng.com" {
+				t.Fatalf("PanSou Web referer missing: %v", fake.ext)
+			}
+		})
+	}
+	fake := &captureSearch{}
+	_, err := (searchAdapter{service: fake}).Search(context.Background(), "movie", "tg", nil, nil, []string{"custom"}, "merge", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fake.args[1].([]string); len(got) != 1 || got[0] != "custom" {
+		t.Fatalf("explicit channels replaced: %v", got)
 	}
 }

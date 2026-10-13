@@ -1,51 +1,84 @@
+param([switch]$VerifyOnly, [string]$Ref)
 $ErrorActionPreference = 'Stop'
+& (Join-Path $PSScriptRoot 'initialize-environment.ps1')
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $submodule = Join-Path $repo 'third_party/pansou'
-$allowed = @('plugin/plugin.go', 'util/cache/sharded_memory_cache.go')
+function Require-Success([string]$Message) { if ($LASTEXITCODE -ne 0) { throw $Message } }
+function Normalize-Patch([string]$Value) { return $Value.Replace("`r`n", "`n").Trim() }
+$groups = @(
+ @{ Files = @('plugin/plugin.go', 'util/cache/sharded_memory_cache.go'); Patch = 'pansou-lifecycle.patch' },
+ @{ Files = @('service/check_service.go'); Patch = 'pansou-check-lifecycle.patch' }
+)
+$allowed = @($groups | ForEach-Object { $_.Files })
+$originalRevision = git -C $submodule rev-parse HEAD
+Require-Success 'Cannot read PanSou revision.'
+$dirty = @(git -C $submodule status --porcelain)
+Require-Success 'Cannot inspect PanSou changes.'
+foreach ($line in $dirty) {
+ $name = $line.Substring(3).Replace('\','/')
+ if ($name -notin $allowed) { throw "PanSou contains an unrecorded local change: $name. Preserve it before updating." }
+}
+foreach ($group in $groups) {
+ $diff = (git -C $submodule diff HEAD -- $group.Files) -join "`n"
+ Require-Success 'Cannot read embedding changes.'
+ if ($diff.Trim()) {
+  $recorded = [IO.File]::ReadAllText((Join-Path $repo ('third_party/' + $group.Patch)))
+  if ((Normalize-Patch $diff) -ne (Normalize-Patch $recorded)) { throw "Local embedding changes differ from $($group.Patch); refusing to discard them." }
+ }
+}
+# Preserve existing root edits byte-for-byte, including module files and generated sources.
+$protected = @('go.mod','go.sum','internal/pansoubridge/plugins_generated.go','internal/pansoubridge/defaults_generated.go')
+$snapshot = @{}
+foreach ($relative in $protected) {
+ $path = Join-Path $repo $relative
+ $snapshot[$path] = if (Test-Path -LiteralPath $path) { [IO.File]::ReadAllBytes($path) } else { $null }
+}
+foreach ($relative in $allowed) {
+ $path = Join-Path $submodule $relative
+ $snapshot[$path] = [IO.File]::ReadAllBytes($path)
+}
+$changed = $false
+$buildFile = Join-Path $env:TEMP ('media-center-update-' + [Guid]::NewGuid().ToString('N') + '.exe')
 Push-Location $repo
 try {
-    $dirty = @(git -C $submodule status --porcelain)
-    if ($dirty.Count -gt 0) {
-        $other = @($dirty | Where-Object { $line = $_.Substring(3).Replace('\', '/'); $line -notin $allowed })
-        if ($other.Count -gt 0) { throw 'PanSou submodule has local changes outside the recorded lifecycle files; preserve or resolve them before updating' }
-        $currentPatch = git -C $submodule diff -- plugin/plugin.go util/cache/sharded_memory_cache.go | Out-String
-        $savedPatch = [IO.File]::ReadAllText((Join-Path $repo 'third_party/pansou-lifecycle.patch'))
-        if ($currentPatch.Trim() -ne $savedPatch.Trim()) { throw 'PanSou files have edits beyond the recorded lifecycle patch; refusing to discard them' }
-        git -C $submodule restore -- plugin/plugin.go util/cache/sharded_memory_cache.go
-    }
-    git submodule update --remote -- third_party/pansou
-    if ($LASTEXITCODE -ne 0) { throw 'submodule update failed' }
-    $main = Get-Content (Join-Path $submodule 'main.go')
-    $active = @($main | ForEach-Object {
-        if ($_ -match '^\s*_\s+"pansou/plugin/([^"]+)"') { " _ `"pansou/plugin/$($Matches[1])`"" }
-    })
-    if ($active.Count -eq 0) { throw 'no active PanSou plugin imports found' }
-    $generated = @(
-        '// Code generated from active blank imports in third_party/pansou/main.go; DO NOT EDIT.'
-        'package pansoubridge'
-        ''
-        'import ('
-        $active
-        ')'
-        ''
-    ) -join "`n"
-    Set-Content -Encoding utf8 (Join-Path $repo 'internal/pansoubridge/plugins_generated.go') $generated
-    & (Join-Path $PSScriptRoot 'prepare-pansou.ps1')
-    if ($LASTEXITCODE -ne 0) { throw 'PanSou lifecycle preparation failed' }
-    $upstreamMod = Get-Content (Join-Path $submodule 'go.mod') -Raw
-    if ($upstreamMod -notmatch '(?m)^module\s+pansou\s*$') { throw 'PanSou module path changed; update the bridge imports before proceeding' }
-    $rootMod = Get-Content (Join-Path $repo 'go.mod') -Raw
-    if ($rootMod -notmatch '(?m)^\s*pansou\s+v\S+') { throw 'go.mod is missing the local PanSou module requirement' }
-    if ($rootMod -notmatch '(?m)^replace\s+pansou\s+=>\s+\./third_party/pansou\s*$') { throw 'go.mod is missing the PanSou submodule replace' }
-    go mod tidy
-    if ($LASTEXITCODE -ne 0) { throw 'go mod tidy failed' }
-    go test ./...
-    if ($LASTEXITCODE -ne 0) { throw 'go test failed' }
-    $bin = Join-Path $env:TEMP 'media-center-api-pansou-update-check.exe'
-    go build -o $bin ./cmd/server
-    if ($LASTEXITCODE -ne 0) { throw 'single-binary build failed' }
-    Remove-Item -LiteralPath $bin -Force
-    Write-Host "PanSou pinned commit: $(git -C $submodule rev-parse HEAD)"
-    Write-Host "Verified $($active.Count) active plugin imports, go.mod, tests, and one-binary build."
-} finally { Pop-Location }
-
+ if (-not $VerifyOnly) {
+  # Resolve an explicit revision before touching the checkout.
+  if ($Ref) { $target = git -C $submodule rev-parse --verify ($Ref + '^{commit}'); Require-Success 'Unknown PanSou revision.' }
+  $changed = $true
+  git -C $submodule restore -- $allowed
+  Require-Success 'Cannot remove the verified embedding patches.'
+  if ($Ref) { git -C $submodule checkout --detach $target; Require-Success 'Cannot select PanSou revision.' }
+  else { git submodule update --init --remote -- third_party/pansou; Require-Success 'PanSou update failed.' }
+ }
+ & (Join-Path $PSScriptRoot 'prepare-pansou.ps1')
+ if ($VerifyOnly) { & (Join-Path $PSScriptRoot 'generate-pansou.ps1') -Check }
+ else { & (Join-Path $PSScriptRoot 'generate-pansou.ps1') }
+ $module = Get-Content (Join-Path $submodule 'go.mod') -Raw
+ if ($module -notmatch '(?m)^module\s+pansou\s*$') { throw 'PanSou module path changed.' }
+ $rootModule = Get-Content (Join-Path $repo 'go.mod') -Raw
+ if ($rootModule -notmatch '(?m)^\s*pansou\s+v\S+' -or $rootModule -notmatch '(?m)^replace\s+pansou\s+=>\s+\./third_party/pansou\s*$') { throw 'The local PanSou module requirement/replace is missing.' }
+ if (-not $VerifyOnly) { go mod tidy; Require-Success 'go mod tidy failed.' }
+ go test ./...
+ Require-Success 'Regression tests failed.'
+ go vet ./...
+ Require-Success 'Static checks failed.'
+ go build -o $buildFile ./cmd/server
+ Require-Success 'Single-binary build failed.'
+ Write-Host "PanSou verified: $(git -C $submodule rev-parse HEAD). Review and commit the updated submodule and generated files together."
+} catch {
+ if ($changed) {
+  git -C $submodule restore -- $allowed
+  Require-Success 'Could not remove generated embedding patches during rollback.'
+  git -C $submodule checkout --detach $originalRevision
+  Require-Success 'Could not restore the original PanSou revision.'
+  foreach ($path in $snapshot.Keys) {
+   if ($null -eq $snapshot[$path]) { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force } }
+   else { [IO.File]::WriteAllBytes($path, $snapshot[$path]) }
+  }
+  Write-Warning 'Update failed; original PanSou revision, embedding edits, module files and generated files restored.'
+ }
+ throw
+} finally {
+ if (Test-Path -LiteralPath $buildFile) { Remove-Item -LiteralPath $buildFile -Force }
+ Pop-Location
+}

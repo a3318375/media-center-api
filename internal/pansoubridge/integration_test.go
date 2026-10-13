@@ -12,6 +12,7 @@ import (
 
 	"pansou/config"
 	"pansou/model"
+	"pansou/util"
 	"pansou/util/cache"
 )
 
@@ -60,7 +61,7 @@ func TestLiveInProcessSearchPOC(t *testing.T) {
 	}
 	cancel()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestPanSouCacheRestoreChild$")
-	cmd.Env = append(os.Environ(), "PANSOU_CACHE_RESTORE_DIR="+filepath.Join(dataDir, "pansou-cache"), "PANSOU_CACHE_RESTORE_KEY=39dbc5e444acbc2b52a3109547abf297")
+	cmd.Env = append(os.Environ(), "PANSOU_CACHE_RESTORE_DIR="+b.cacheDir, "PANSOU_CACHE_RESTORE_KEY="+cache.GeneratePluginCacheKey("流浪地球2", nil, util.ExtDigest(map[string]interface{}{"referer": "https://dm.xueximeng.com"})))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("cache restore subprocess: %v\n%s", err, out)
 	} else {

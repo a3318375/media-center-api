@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"media-center/internal/discovery"
+	"media-center/internal/pansoubridge"
 	"media-center/internal/providers/douban"
 	"media-center/internal/store"
 	"media-center/internal/tmdb"
@@ -86,6 +87,9 @@ func NewRouter(db *store.Store, resourceSearch ...gin.HandlerFunc) *gin.Engine {
 	}
 	if len(resourceSearch) > 1 && resourceSearch[1] != nil {
 		v1.GET("/resources/meta", resourceSearch[1])
+	}
+	if len(resourceSearch) > 2 && resourceSearch[2] != nil {
+		v1.POST("/resources/check", resourceSearch[2])
 	}
 	return router
 }
@@ -463,6 +467,12 @@ func (a *API) putSettings(c *gin.Context) {
 	}
 	if body.Values == nil {
 		body.Values = map[string]json.RawMessage{}
+	}
+	if section == "pansou" {
+		if err := pansoubridge.ValidateSettings(body.Values); err != nil {
+			fail(c, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	if err := a.store.SaveSettings(section, body.Values, body.ClearSecrets); err != nil {
 		fail(c, http.StatusBadRequest, "配置保存失败："+err.Error())

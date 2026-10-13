@@ -1,14 +1,18 @@
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $submodule = Join-Path $repo 'third_party/pansou'
-$cacheSource = Join-Path $submodule 'util/cache/sharded_memory_cache.go'
-$pluginSource = Join-Path $submodule 'plugin/plugin.go'
-$hasCacheStop = Select-String -Path $cacheSource -Pattern 'func StopGlobalCleanupTask' -Quiet
-$hasPluginWait = Select-String -Path $pluginSource -Pattern 'func WaitForAsyncTasks' -Quiet
-if ($hasCacheStop -and $hasPluginWait) { Write-Host 'PanSou lifecycle hooks already prepared.'; exit 0 }
-$patch = Join-Path $repo 'third_party/pansou-lifecycle.patch'
-git -C $submodule apply --check (Join-Path '..' 'pansou-lifecycle.patch')
-if ($LASTEXITCODE -ne 0) { throw 'PanSou lifecycle patch no longer applies; inspect upstream changes before building' }
-git -C $submodule apply (Join-Path '..' 'pansou-lifecycle.patch')
-if ($LASTEXITCODE -ne 0) { throw 'failed to apply PanSou lifecycle patch' }
-Write-Host 'Applied PanSou cache-stop and async-drain hooks.'
+if (-not (Test-Path -LiteralPath (Join-Path $submodule 'go.mod'))) { throw 'Initialize PanSou first: git submodule update --init --recursive' }
+$hooks = @(
+ @{ Source = 'plugin/plugin.go'; Symbol = 'func WaitForAsyncTasks'; Patch = 'pansou-lifecycle.patch'; Companion = 'util/cache/sharded_memory_cache.go'; CompanionSymbol = 'func StopGlobalCleanupTask' },
+ @{ Source = 'service/check_service.go'; Symbol = 'func NewCheckServiceWithCachePath'; Patch = 'pansou-check-lifecycle.patch'; Companion = 'service/check_service.go'; CompanionSymbol = 'func (s *CheckService) Close' }
+)
+foreach ($hook in $hooks) {
+ $ready = (Select-String -LiteralPath (Join-Path $submodule $hook.Source) -SimpleMatch $hook.Symbol -Quiet) -and (Select-String -LiteralPath (Join-Path $submodule $hook.Companion) -SimpleMatch $hook.CompanionSymbol -Quiet)
+ if ($ready) { continue }
+ $patch = Join-Path $repo ('third_party/' + $hook.Patch)
+ git -C $submodule apply --check $patch
+ if ($LASTEXITCODE -ne 0) { throw "Embedding patch no longer applies: $($hook.Patch). Inspect upstream changes before building." }
+ git -C $submodule apply $patch
+ if ($LASTEXITCODE -ne 0) { throw "Failed to apply $($hook.Patch)." }
+}
+Write-Host 'PanSou embedding lifecycle hooks verified.'

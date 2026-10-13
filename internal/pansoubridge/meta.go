@@ -1,38 +1,54 @@
 package pansoubridge
 
 import (
-	"sort"
-
 	"github.com/gin-gonic/gin"
 	"pansou/config"
 	"pansou/plugin"
+	"pansou/service"
+	"sort"
 )
 
-var supportedCloudTypes = []string{"baidu", "aliyun", "115", "123", "xunlei", "quark", "guangya", "mobile", "tianyi", "uc", "pikpak", "ed2k", "magnet", "other"}
+var supportedCloudTypes = []string{"baidu", "aliyun", "115", "123", "xunlei", "quark", "guangya", "mobile", "tianyi", "uc", "pikpak", "ed2k", "magnet", "others"}
 
+// Kept for small adapter tests; production uses the initialized manager's options.
 func MetaHandler() gin.HandlerFunc {
+	b := &Bootstrap{}
+	if config.AppConfig != nil {
+		b.channels = config.AppConfig.DefaultChannels
+		b.plugins = config.AppConfig.EnabledPlugins
+	}
+	return b.MetaHandler()
+}
+
+func (b *Bootstrap) MetaHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		plugins := plugin.GetRegisteredPlugins()
-		names := make([]string, 0, len(plugins))
-		for _, p := range plugins {
-			names = append(names, p.Name())
+		selected, err := b.ReadSearchSettings()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "无法读取资源搜索配置"})
+			return
+		}
+		names := append([]string{}, b.plugins...)
+		if b.settings == nil && len(names) == 0 {
+			for _, p := range plugin.GetRegisteredPlugins() {
+				names = append(names, p.Name())
+			}
 		}
 		sort.Strings(names)
-		pluginOptions := make([]gin.H, 0, len(names))
+		options := make([]gin.H, 0, len(names))
 		for _, name := range names {
-			pluginOptions = append(pluginOptions, gin.H{"name": name})
+			options = append(options, gin.H{"name": name})
 		}
-		var channels, defaults []string
-		if config.AppConfig != nil {
-			channels = append([]string(nil), config.AppConfig.DefaultChannels...)
-			defaults = append([]string(nil), config.AppConfig.EnabledPlugins...)
+		channels := append([]string{}, b.channels...)
+		seen := map[string]bool{}
+		for _, name := range channels {
+			seen[name] = true
 		}
-		if defaults == nil {
-			defaults = []string{}
+		for _, name := range append(append([]string{}, selected.CustomChannels...), selected.Channels...) {
+			if !seen[name] {
+				channels = append(channels, name)
+				seen[name] = true
+			}
 		}
-		if channels == nil {
-			channels = []string{}
-		}
-		c.JSON(200, gin.H{"data": gin.H{"plugins": pluginOptions, "channels": channels, "cloudTypes": supportedCloudTypes, "defaults": gin.H{"plugins": defaults, "channels": channels, "cloudTypes": supportedCloudTypes}}})
+		c.JSON(200, gin.H{"data": gin.H{"plugins": options, "channels": channels, "cloudTypes": supportedCloudTypes, "defaults": b.defaultSettings(), "selection": selected, "upstreamRevision": embeddedPanSouCommit, "tg": service.TGReachabilitySnapshot()}})
 	}
 }

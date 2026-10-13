@@ -37,6 +37,20 @@ func (b *Bootstrap) Handler() gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "query must contain 1 to 120 characters"})
 			return
 		}
+		selected, err := b.ReadSearchSettings()
+		if err != nil {
+			c.JSON(500, gin.H{"error": "无法读取资源搜索配置"})
+			return
+		}
+		if req.Channels == nil {
+			req.Channels = selected.Channels
+		}
+		if req.Plugins == nil {
+			req.Plugins = selected.Plugins
+		}
+		if req.CloudTypes == nil {
+			req.CloudTypes = selected.CloudTypes
+		}
 		if req.Source == "" {
 			req.Source = "all"
 		}
@@ -49,7 +63,7 @@ func (b *Bootstrap) Handler() gin.HandlerFunc {
 			return
 		}
 		for _, typ := range req.CloudTypes {
-			if !cloudTypeRE.MatchString(typ) {
+			if !knownCloudType(typ) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid cloud type"})
 				return
 			}
@@ -75,11 +89,44 @@ func (b *Bootstrap) Handler() gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "mode must be merge or results"})
 			return
 		}
+		// Empty source selections mean disabled, rather than PanSou's nil/all fallback.
+		source := req.Source
+		if source == "all" {
+			if len(req.Channels) == 0 {
+				source = "plugin"
+			}
+			if len(req.Plugins) == 0 {
+				source = "tg"
+			}
+		}
+		if (source == "tg" && len(req.Channels) == 0) || (source == "plugin" && len(req.Plugins) == 0) {
+			c.JSON(200, gin.H{"data": emptySearchData()})
+			return
+		}
+		allowed := map[string]bool{}
+		for _, name := range b.plugins {
+			allowed[name] = true
+		}
+		for _, name := range req.Plugins {
+			if !allowed[name] {
+				c.JSON(400, gin.H{"error": "unavailable plugin: " + name})
+				return
+			}
+		}
+		for i, cloud := range req.CloudTypes {
+			if cloud == "other" {
+				req.CloudTypes[i] = "others"
+			}
+		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
 		defer cancel()
-		result, err := b.Search(ctx, req.Query, req.Source, req.CloudTypes, req.Plugins, req.Channels, req.Mode, req.Refresh)
+		result, err := b.Search(ctx, req.Query, source, req.CloudTypes, req.Plugins, req.Channels, req.Mode, req.Refresh)
 		if err != nil {
 			status := http.StatusServiceUnavailable
+			if errors.Is(err, ErrRefreshLimited) || errors.Is(err, ErrSearchBusy) {
+				status = http.StatusTooManyRequests
+				c.Header("Retry-After", "10")
+			}
 			if errors.Is(err, context.DeadlineExceeded) {
 				status = http.StatusGatewayTimeout
 			}

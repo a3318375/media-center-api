@@ -7,11 +7,13 @@
 安装 Go 1.26 或更新版本后，在此目录运行：
 
 ```powershell
-go mod tidy
-go run ./cmd/server
+git submodule update --init --recursive
+./scripts/dev.ps1
 ```
 
-服务默认监听 `http://localhost:8080`。首次打开前端时会显示创建管理员账号页面；账号 3–32 位，密码不能为空且最多 72 字节（bcrypt 限制）。初始化后可用新账号登录。健康检查地址是 `GET /api/health`。
+Windows 开发环境可运行 `./scripts/dev.ps1`：未显式配置 PROXY/HTTP_PROXY/HTTPS_PROXY/ALL_PROXY 时，脚本读取当前已启用的 Windows 系统代理，仅传给本次后端进程；不会修改系统代理。直接 `go run` 在 Windows 上也会自动读取当前已启用的系统代理，已有环境变量优先。Linux/macOS 先运行 `sh scripts/prepare-pansou.sh`，再运行 `go run ./cmd/server`。
+
+服务默认监听 `http://localhost:18080`。首次打开前端时会显示创建管理员账号页面；账号 3–32 位，密码不能为空且最多 72 字节（bcrypt 限制）。初始化后可用新账号登录。健康检查地址是 `GET /api/health`。
 
 默认数据保存在项目目录的 `data/`：`media-center.db` 是 SQLite 数据库，`master.key` 用于加密 TMDB/Emby API Key、115 Cookie 和 Telegram Bot Token。备份和迁移时需要一起保存这两个文件；丢失密钥后无法解密已存的服务凭证。可用 `MEDIA_CENTER_DATA_DIR` 指定其他持久化目录，用 `HTTP_ADDR` 指定监听地址。
 
@@ -46,7 +48,7 @@ API Key 以 `mc_` 开头，数据库仅保存 SHA-256 摘要；完整密钥只�
 验证密钥：
 
 ```powershell
-Invoke-RestMethod http://localhost:8080/api/v1/whoami -Headers @{ Authorization = "Bearer <API_KEY>" }
+Invoke-RestMethod http://localhost:18080/api/v1/whoami -Headers @{ Authorization = "Bearer <API_KEY>" }
 ```
 
 ## 项目约定
@@ -77,3 +79,13 @@ HTTP 路由和输入校验放在 `internal/httpapi`，领域 DTO 放在 `interna
 设置 `PATH=/home/yuxh/.local/bin:$PATH`、`GOCACHE=/tmp/media-center-go-build` 后，实际执行 `go build ./...`、`go vet ./...` 均退出 0、无诊断；`go test ./...` 退出 0，httpapi 与 tmdb 测试通过，其余包无测试。默认 Go 缓存目录不可写，首次尝试失败后改用上述可写目录。
 
 前端实际执行 typecheck、lint、build 均退出 0；Vite 成功构建，提示主 JS chunk 超过 500 kB。尚未验证真实 TMDB API、图片 CDN、部署出站网络或浏览器点击联调；提供密钥后才能做这些验收。未接入豆瓣/Bangumi/AniList、资源搜索或下载。
+
+## 内嵌 PanSou 与换电脑开发
+
+PanSou 作为固定 Git 子模块编译进 API 进程，无需单独部署 PanSou Docker 服务。插件注册和推荐配置从该版本的 main.go/docker-compose.yml 生成，设置中的可用选项来自实际初始化成功的插件管理器。
+
+启动会补齐 pansou 分类的缺失配置并迁移旧的未初始化占位值，保留已保存的明确空选择和关闭状态。新数据目录已验证自动生成 111 个频道、71 个启用插件、14 个网盘类型；不同上游版本或环境变量可能改变这些数量。换电脑拉取代码和子模块即可恢复默认配置；个性化设置及加密凭证仍需同步 data/（数据库和 master.key 一起），不会把密钥提交到 Git。
+
+影视卡片、详情页和手动资源搜索共用保存的选择及 PanSou Web 的分轮搜索流程。链接检测复用 PanSou 服务；检测缓存保存在数据目录内。不同 PanSou 版本与启用插件集合使用不同缓存命名空间。
+
+更新：`./scripts/update-pansou.ps1`；验证当前版本：`./scripts/update-pansou.ps1 -VerifyOnly`；选择已存在的固定版本：`./scripts/update-pansou.ps1 -Ref <commit>`。更新失败会恢复原子模块版本、嵌入补丁、模块文件和生成文件。更新完成后应一起提交这些文件和子模块指针。
