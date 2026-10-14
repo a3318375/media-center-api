@@ -83,6 +83,9 @@ func TestDecryptedSubmissionChecksEachResult(t *testing.T) {
 
 func TestNativeShareSnapshotAndReceiveCookieRoute(t *testing.T) {
 	c, err := New(context.Background(), "UID=123_A1; CID=fixture; SEID=fixture", nil, transportFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "webapi.115.com" || r.Header.Get("User-Agent") != shareUA || r.Header.Get("Referer") != shareReferer {
+			t.Fatal("share endpoint/profile mismatch")
+		}
 		if r.URL.Path == "/share/receive" {
 			body, _ := io.ReadAll(r.Body)
 			form, e := url.ParseQuery(string(body))

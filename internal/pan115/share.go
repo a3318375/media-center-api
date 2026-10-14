@@ -15,6 +15,11 @@ type ShareGateway interface {
 	ReceiveShare(code, password string, ids []string, directory string) error
 }
 
+// Web share endpoints require the mini-program client profile for this Cookie route.
+// Keep this profile scoped to sharing; other 115 APIs retain their own SDK profile.
+const shareUA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36 MicroMessenger/6.8.0(0x16080000) NetType/WIFI MiniProgramEnv/Mac MacWechat/WMPF XWEB/30626"
+const shareReferer = "https://servicewechat.com/wx2c744c010a61b0fa/94/page-frame.html"
+
 func (c *Client) ListShare(code, password, directory string) ([]File, error) {
 	out := []File{}
 	for offset := 0; offset < 10000; offset += 100 {
@@ -25,7 +30,7 @@ func (c *Client) ListShare(code, password, directory string) ([]File, error) {
 				List  []sdk.ShareFile `json:"list"`
 			} `json:"data"`
 		}
-		resp, err := c.sdk.NewRequest().SetQueryParams(map[string]string{"share_code": code, "receive_code": password, "cid": directory, "limit": "100", "offset": strconv.Itoa(offset), "format": "json"}).SetHeader("Referer", sdk.BuildShareReferer(code, password)).ForceContentType("application/json").SetResult(&result).Get(sdk.ApiShareSnap)
+		resp, err := c.sdk.NewRequest().SetHeader("User-Agent", shareUA).SetHeader("Referer", shareReferer).SetQueryParams(map[string]string{"share_code": code, "receive_code": password, "cid": directory, "limit": "100", "offset": strconv.Itoa(offset), "format": "json"}).ForceContentType("application/json").SetResult(&result).Get("https://webapi.115.com/share/snap")
 		if err = sdk.CheckErr(err, &result, resp); err != nil {
 			return nil, SafeError(err)
 		}
@@ -74,7 +79,7 @@ func (c *Client) ReceiveShare(code, password string, ids []string, directory str
 		return fmt.Errorf("分享选择数量无效")
 	}
 	var result sdk.BasicResp
-	resp, err := c.sdk.NewRequest().SetFormData(map[string]string{"share_code": code, "receive_code": password, "file_id": strings.Join(ids, ","), "cid": directory, "user_id": strconv.FormatInt(c.sdk.UserID, 10)}).ForceContentType("application/json").SetResult(&result).Post("https://webapi.115.com/share/receive")
+	resp, err := c.sdk.NewRequest().SetHeader("User-Agent", shareUA).SetHeader("Referer", shareReferer).SetFormData(map[string]string{"share_code": code, "receive_code": password, "file_id": strings.Join(ids, ","), "cid": directory, "user_id": strconv.FormatInt(c.sdk.UserID, 10)}).ForceContentType("application/json").SetResult(&result).Post("https://webapi.115.com/share/receive")
 	if err = sdk.CheckErr(err, &result, resp); err != nil {
 		return SafeError(err)
 	}

@@ -33,6 +33,7 @@ type Reference struct {
 	Media    MediaContext `json:"media"`
 }
 type Request struct {
+	WholeShare        bool      `json:"wholeShare,omitempty"`
 	Kind              string    `json:"kind"`
 	URL               string    `json:"url"`
 	DirectoryID       string    `json:"directoryId"`
@@ -42,6 +43,7 @@ type Request struct {
 	FileIDs           []string  `json:"fileIds,omitempty"`
 }
 type Task struct {
+	WholeShare          bool           `json:"wholeShare,omitempty"`
 	ID                  string         `json:"id"`
 	AccountID           string         `json:"accountId"`
 	Kind                string         `json:"kind"`

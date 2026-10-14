@@ -107,3 +107,28 @@ func TestShareSelectionIdentityAndURLValidation(t *testing.T) {
 		t.Fatal(again, hash, err)
 	}
 }
+
+func TestWholeShareDiscoversAndPersistsSelectionInBackground(t *testing.T) {
+	db, s, base, _ := setup(t)
+	g := &shareGateway{gateway: base, source: map[string][]pan115.File{"0": {{ID: "7", Name: "movie.mkv", Size: 4, SHA1: "abc"}, {ID: "8", Name: "movie.ass", Size: 1}}}}
+	s.Factory = func(context.Context, string) (pan115.Gateway, error) { return g, nil }
+	r := shareRequest()
+	r.WholeShare = true
+	r.FileIDs = nil
+	task, created, e := s.Enqueue(r)
+	if e != nil || !created || len(task.FileIDs) != 0 || !task.WholeShare {
+		t.Fatalf("%+v %v", task, e)
+	}
+	tick(t, s)
+	v := read(t, db, task.ID)
+	if v.State != "completed" || len(v.FileIDs) != 2 || len(v.Manifest) != 2 || g.receives != 1 {
+		t.Fatalf("%+v receives=%d", v, g.receives)
+	}
+	if _, created, e = s.Enqueue(r); e != nil || created {
+		t.Fatal("whole-share duplicate", e)
+	}
+	tick(t, s)
+	if g.receives != 1 {
+		t.Fatal("whole share submitted twice")
+	}
+}

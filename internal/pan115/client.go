@@ -137,7 +137,7 @@ func (t boundedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		if resp.StatusCode == 401 || resp.StatusCode == 403 {
 			code = "credential"
 		}
-		return nil, &Error{code, "115 请求被拒绝，请稍后核对", false}
+		return nil, &Error{code, fmt.Sprintf("115 请求被拒绝（HTTP %d），请稍后核对", resp.StatusCode), false}
 	}
 	resp.Body = &boundedBody{ReadCloser: resp.Body, remaining: 4 << 20}
 	return resp, nil

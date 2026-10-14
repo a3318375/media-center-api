@@ -54,7 +54,10 @@ func validateShare(r *Request) (string, error) {
 	if !pan115.ValidDirectory(r.SourceDirectoryID) {
 		return "", fmt.Errorf("分享来源目录 ID 无效")
 	}
-	if len(r.FileIDs) == 0 || len(r.FileIDs) > 100 {
+	if r.WholeShare && len(r.FileIDs) > 0 {
+		return "", fmt.Errorf("整份分享转存不能同时指定文件选择")
+	}
+	if !r.WholeShare && len(r.FileIDs) == 0 || len(r.FileIDs) > 100 {
 		return "", fmt.Errorf("请选择 1–100 个分享文件或目录")
 	}
 	seen := map[string]bool{}
@@ -65,7 +68,11 @@ func validateShare(r *Request) (string, error) {
 		seen[id] = true
 	}
 	sort.Strings(r.FileIDs)
-	hash := sha256.Sum256([]byte(code + ":" + r.SourceDirectoryID + ":" + strings.Join(r.FileIDs, ",")))
+	selection := strings.Join(r.FileIDs, ",")
+	if r.WholeShare {
+		selection = "all"
+	}
+	hash := sha256.Sum256([]byte(code + ":" + r.SourceDirectoryID + ":" + selection))
 	return "share:" + hex.EncodeToString(hash[:]), nil
 }
 
@@ -98,6 +105,40 @@ func (s *Service) processShare(g pan115.Gateway, t Task) error {
 			t.ErrorCode = "invalid_directory"
 			t.Error = "115 转存目标不是目录"
 			return s.Store.SaveDownload(t)
+		}
+		if t.WholeShare && len(t.FileIDs) == 0 {
+			files, e := share.ListShare(code, password, t.SourceDirectoryID)
+			if e != nil {
+				safe := pan115.SafeError(e)
+				if safe.Certain {
+					t.State = "failed"
+					t.ErrorCode = safe.Code
+					t.Error = safe.Message
+					return s.Store.SaveDownload(t)
+				}
+				return s.saveError(t, e)
+			}
+			if len(files) == 0 || len(files) > 100 {
+				t.State = "failed"
+				t.ErrorCode = "share_selection_limit"
+				t.Error = "分享目录为空或超过 100 个顶层项目，无法整份转存"
+				return s.Store.SaveDownload(t)
+			}
+			for _, f := range files {
+				t.FileIDs = append(t.FileIDs, f.ID)
+			}
+			sort.Strings(t.FileIDs)
+			t.State = "preparing"
+			if e = s.Store.SaveDownload(t); e != nil {
+				return e
+			}
+			t, e = s.Store.GetDownload(t.ID)
+			if e != nil {
+				return e
+			}
+			if t.State != "preparing" {
+				return nil
+			}
 		}
 		manifest, e := shareManifest(share, code, password, t.SourceDirectoryID, t.FileIDs)
 		if e != nil {

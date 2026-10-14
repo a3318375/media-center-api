@@ -53,6 +53,7 @@ func (s *Store) CreateDownload(account, hash string, r download.Request) (downlo
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 		t = download.Task{ID: hex.EncodeToString(id), AccountID: account, Kind: r.Kind, URL: r.URL, ResourceID: hash, DirectoryID: r.DirectoryID, State: "queued", CreatedAt: now, UpdatedAt: now, Revision: 1, Artifacts: []pan115.File{}}
 		t.SourceDirectoryID = r.SourceDirectoryID
+		t.WholeShare = r.WholeShare
 		t.FileIDs = r.FileIDs
 		data, e := json.Marshal(t)
 		if e != nil {
