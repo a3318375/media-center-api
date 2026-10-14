@@ -10,6 +10,26 @@ import (
 func validDraft() Draft {
 	return Draft{Title: "测试动画", BangumiID: "123", Source: "other", URL: "https://example.com/rss", Season: 1, Match: []string{}, Exclude: []string{}, Standby: []Feed{}}
 }
+
+func TestRSSResourceKindsAndNamespaces(t *testing.T) {
+	s := New()
+	s.Fetch = func(context.Context, string) ([]byte, error) {
+		return []byte(`<rss xmlns:nyaa="https://nyaa.si/xmlns/nyaa"><channel><item><title>动画 - 01</title><link>https://example.com/release/1</link><enclosure url="https://example.com/1.torrent" type="application/x-bittorrent" length="100"/></item><item><title>动画 - 02</title><link>https://example.com/release/2</link><nyaa:infoHash>0123456789abcdef0123456789abcdef01234567</nyaa:infoHash></item><item><title>动画 - 03</title><link>https://example.com/release/3</link></item></channel></rss>`), nil
+	}
+	items, err := s.RSS(context.Background(), "https://example.com/rss")
+	if err != nil || len(items) != 3 {
+		t.Fatal(items, err)
+	}
+	if items[0].DownloadKind != "torrent" || items[0].ContentLength != 100 || items[0].DetailURL == items[0].URL {
+		t.Fatal(items[0])
+	}
+	if items[1].DownloadKind != "magnet" || !strings.HasPrefix(items[1].ResourceID, "btih:") {
+		t.Fatal(items[1])
+	}
+	if items[2].URL != "" || items[2].DetailURL == "" {
+		t.Fatal("detail page became resource", items[2])
+	}
+}
 func TestRulesAndOffset(t *testing.T) {
 	d := validDraft()
 	d.Offset = -12

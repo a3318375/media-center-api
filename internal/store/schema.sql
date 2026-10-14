@@ -60,3 +60,62 @@ CREATE TABLE IF NOT EXISTS anime_subscriptions (
 CREATE TABLE IF NOT EXISTS anime_schedule_runs (
  run_date TEXT PRIMARY KEY
 );
+
+CREATE TABLE IF NOT EXISTS download_tasks (
+ id TEXT PRIMARY KEY,
+ account_id TEXT NOT NULL,
+ resource_id TEXT NOT NULL,
+ state TEXT NOT NULL,
+ revision INTEGER NOT NULL DEFAULT 1,
+ data TEXT NOT NULL,
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL,
+ UNIQUE(account_id, resource_id)
+);
+CREATE INDEX IF NOT EXISTS idx_download_tasks_state ON download_tasks(state, created_at);
+CREATE TABLE IF NOT EXISTS download_references (
+ task_id TEXT NOT NULL REFERENCES download_tasks(id) ON DELETE CASCADE,
+ reference_key TEXT NOT NULL,
+ data TEXT NOT NULL,
+ PRIMARY KEY(task_id, reference_key)
+);
+CREATE TABLE IF NOT EXISTS download_events (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ task_id TEXT NOT NULL REFERENCES download_tasks(id) ON DELETE CASCADE,
+ state TEXT NOT NULL,
+ error_code TEXT NOT NULL,
+ occurred_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS download_task_secrets (
+ task_id TEXT PRIMARY KEY REFERENCES download_tasks(id) ON DELETE CASCADE,
+ value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS anime_download_rules (
+ subscription_id TEXT PRIMARY KEY REFERENCES anime_subscriptions(id) ON DELETE CASCADE,
+ enabled INTEGER NOT NULL DEFAULT 0,
+ directory_id TEXT NOT NULL,
+ from_episode INTEGER NOT NULL,
+ updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS anime_download_candidates (
+ id TEXT PRIMARY KEY,
+ subscription_id TEXT NOT NULL REFERENCES anime_subscriptions(id) ON DELETE CASCADE,
+ resource_id TEXT NOT NULL,
+ episode INTEGER NOT NULL,
+ state TEXT NOT NULL,
+ task_id TEXT NOT NULL DEFAULT '',
+ data TEXT NOT NULL,
+ created_at TEXT NOT NULL,
+ UNIQUE(subscription_id,resource_id)
+);
+CREATE INDEX IF NOT EXISTS idx_anime_candidates_pending ON anime_download_candidates(state, subscription_id, episode);
+
+CREATE TABLE IF NOT EXISTS anime_download_rule_accounts (
+ subscription_id TEXT PRIMARY KEY REFERENCES anime_download_rules(subscription_id) ON DELETE CASCADE,
+ account_id TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS organize_rules (id TEXT PRIMARY KEY, data TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS organize_plans (id TEXT PRIMARY KEY, rule_id TEXT NOT NULL, run_date TEXT, state TEXT NOT NULL, data TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 1, UNIQUE(rule_id,run_date));
+CREATE TABLE IF NOT EXISTS organize_bindings (account_id TEXT NOT NULL, file_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(account_id,file_id));

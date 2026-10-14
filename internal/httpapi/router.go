@@ -16,6 +16,8 @@ import (
 	"media-center/internal/anime"
 	"media-center/internal/animesync"
 	"media-center/internal/discovery"
+	"media-center/internal/download"
+	"media-center/internal/organize"
 	"media-center/internal/pansoubridge"
 	"media-center/internal/providers/douban"
 	"media-center/internal/store"
@@ -26,6 +28,8 @@ import (
 )
 
 type API struct {
+	organizer       *organize.Service
+	downloads       *download.Service
 	animeUpdater    *animesync.Updater
 	credentialMu    sync.Mutex
 	tmdbFingerprint [32]byte
@@ -52,7 +56,13 @@ func NewRouter(db *store.Store, resourceSearch ...gin.HandlerFunc) *gin.Engine {
 	return NewRouterWithAnime(db, animesync.New(db, anime.New()), resourceSearch...)
 }
 func NewRouterWithAnime(db *store.Store, updater *animesync.Updater, resourceSearch ...gin.HandlerFunc) *gin.Engine {
-	api := &API{store: db, tmdb: tmdb.NewClient(), animeUpdater: updater}
+	return NewRouterWithServices(db, updater, download.New(db), resourceSearch...)
+}
+func NewRouterWithServices(db *store.Store, updater *animesync.Updater, downloads *download.Service, resourceSearch ...gin.HandlerFunc) *gin.Engine {
+	return NewRouterWithOrganizer(db, updater, downloads, &organize.Service{Store: db, Factory: downloads.Factory}, resourceSearch...)
+}
+func NewRouterWithOrganizer(db *store.Store, updater *animesync.Updater, downloads *download.Service, organizer *organize.Service, resourceSearch ...gin.HandlerFunc) *gin.Engine {
+	api := &API{store: db, tmdb: tmdb.NewClient(), animeUpdater: updater, downloads: downloads, organizer: organizer}
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 	router.Use(api.requestLog())
@@ -90,6 +100,8 @@ func NewRouterWithAnime(db *store.Store, updater *animesync.Updater, resourceSea
 	v1 := router.Group("/api/v1", api.requireAPI())
 	v1.GET("/whoami", api.apiWhoAmI)
 	api.mountAnime(v1)
+	api.mountDownloads(v1)
+	api.mountOrganize(v1)
 	if len(resourceSearch) > 0 && resourceSearch[0] != nil {
 		v1.POST("/resources/search", resourceSearch[0])
 	}
@@ -488,6 +500,12 @@ func (a *API) putSettings(c *gin.Context) {
 	}
 	if section == "115" && a.animeUpdater != nil {
 		a.animeUpdater.Wake()
+	}
+	if section == "115" && a.downloads != nil {
+		if err := a.downloads.CredentialsChanged(); err != nil {
+			fail(c, 500, "配置已保存，下载队列唤醒失败，请稍后重试")
+			return
+		}
 	}
 	values, secrets, err := a.store.ReadSettings(section)
 	if err != nil {

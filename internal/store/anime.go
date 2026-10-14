@@ -164,6 +164,11 @@ func (s *Store) SaveAnimeRefresh(v anime.Subscription) (anime.Subscription, erro
 	if _, e = tx.Exec(`UPDATE anime_subscriptions SET data=?,updated_at=? WHERE id=?`, string(b), current.UpdatedAt, current.ID); e != nil {
 		return current, e
 	}
+	if v.Discovered != nil && v.LastError == "" {
+		if e = saveAnimeCandidates(tx, current, v.Discovered); e != nil {
+			return current, e
+		}
+	}
 	return current, tx.Commit()
 }
 func (s *Store) AnimeDailyDone(date string) (bool, error) {

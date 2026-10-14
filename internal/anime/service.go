@@ -136,11 +136,21 @@ func (s *Service) RSS(ctx context.Context, raw string) ([]Entry, error) {
 		XMLName xml.Name
 		Channel struct {
 			Items []struct {
-				Title     string `xml:"title"`
-				Link      string `xml:"link"`
-				Date      string `xml:"pubDate"`
+				Title       string `xml:"title"`
+				Link        string `xml:"link"`
+				Date        string `xml:"pubDate"`
+				GUID        string `xml:"guid"`
+				MagnetURI   string `xml:"magnetURI"`
+				MagnetLower string `xml:"magneturi"`
+				InfoHash    string `xml:"infoHash"`
+				SubjectID   string `xml:"https://animes.garden/ns/rss/1.0 subjectId"`
+				Torrent     struct {
+					MagnetURI string `xml:"magnetURI"`
+				} `xml:"torrent"`
 				Enclosure struct {
-					URL string `xml:"url,attr"`
+					URL    string `xml:"url,attr"`
+					Type   string `xml:"type,attr"`
+					Length string `xml:"length,attr"`
 				} `xml:"enclosure"`
 			} `xml:"item"`
 		} `xml:"channel"`
@@ -150,18 +160,31 @@ func (s *Service) RSS(ctx context.Context, raw string) ([]Entry, error) {
 	}
 	out := []Entry{}
 	for _, it := range feed.Channel.Items {
-		if len(out) >= 300 {
-			break
+		if len(out) >= 1000 {
+			return nil, fmt.Errorf("RSS 超过 1000 条，请缩小订阅范围")
 		}
 		link := it.Enclosure.URL
 		if link == "" {
 			link = it.Link
 		}
-		u, _ := url.Parse(link)
-		if u == nil || (u.Scheme != "https" && u.Scheme != "http" && u.Scheme != "magnet") {
-			link = ""
+		for _, magnet := range []string{it.MagnetURI, it.MagnetLower, it.Torrent.MagnetURI} {
+			if magnet != "" {
+				link = magnet
+				break
+			}
 		}
-		out = append(out, Entry{Title: it.Title, URL: link, PublishedAt: it.Date})
+		if it.InfoHash != "" {
+			link = "magnet:?xt=urn:btih:" + strings.TrimSpace(it.InfoHash)
+		}
+		entry := Entry{Title: it.Title, URL: link, DetailURL: it.Link, GUID: it.GUID, PublishedAt: it.Date, BangumiID: strings.TrimSpace(it.SubjectID)}
+		if entry.BangumiID != "" && !ValidID(entry.BangumiID) {
+			return nil, fmt.Errorf("RSS 作品 ID 无效")
+		}
+		if length, err := strconv.ParseInt(it.Enclosure.Length, 10, 64); err == nil && length > 0 {
+			entry.ContentLength = length
+		}
+		DescribeResource(&entry, strings.EqualFold(it.Enclosure.Type, "application/x-bittorrent") && link == it.Enclosure.URL)
+		out = append(out, entry)
 	}
 	return out, nil
 }
@@ -194,6 +217,17 @@ func (s *Service) Resolve(ctx context.Context, d Draft) (Draft, error) {
 		return d, e
 	}
 	u, _ := url.Parse(d.URL)
+	if d.Source == "ani-bt" {
+		d.BangumiID = u.Query().Get("bgmId")
+		d.Subgroup = u.Query().Get("groupSlug")
+	}
+	if d.Source == "anime-garden" {
+		d.BangumiID = u.Query().Get("subject")
+		d.Subgroup = u.Query().Get("fansub")
+	}
+	if e := ValidateSourceURL(d); e != nil {
+		return d, e
+	}
 	if d.Source == "mikan" {
 		if u.Hostname() != "mikanani.me" && u.Hostname() != "mikanime.tv" {
 			return d, fmt.Errorf("Mikan RSS 域名无效")

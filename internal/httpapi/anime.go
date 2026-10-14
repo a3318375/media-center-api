@@ -6,6 +6,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"media-center/internal/anime"
 	"media-center/internal/animesync"
+	"media-center/internal/download"
+	"media-center/internal/pan115"
 	"media-center/internal/store"
 	"net/http"
 	"time"
@@ -13,6 +15,79 @@ import (
 
 func (s *API) mountAnime(v1 *gin.RouterGroup) {
 	service := anime.New()
+	for _, source := range []string{"ani-bt", "anime-garden"} {
+		v1.GET("/anime/sources/"+source+"/catalog", func(c *gin.Context) {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+			defer cancel()
+			out, e := service.SourceCatalog(ctx, source, c.Query("query"), c.Query("season"), c.Query("refresh") == "true")
+			if e != nil {
+				fail(c, 502, e.Error())
+				return
+			}
+			c.JSON(200, out)
+		})
+		v1.GET("/anime/sources/"+source+"/:id/groups", func(c *gin.Context) {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+			defer cancel()
+			out, e := service.SourceGroups(ctx, source, c.Param("id"), c.Query("refresh") == "true")
+			if e != nil {
+				fail(c, 502, e.Error())
+				return
+			}
+			c.JSON(200, out)
+		})
+	}
+	v1.POST("/subscriptions/anime/:id/downloads/retry", func(c *gin.Context) {
+		count, err := s.store.RetryAnimeCandidates(c.Param("id"))
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				fail(c, 404, "订阅不存在")
+			} else {
+				downloadFailure(c, err)
+			}
+			return
+		}
+		s.downloads.Wake()
+		c.JSON(200, gin.H{"count": count})
+	})
+	v1.GET("/subscriptions/anime/:id/downloads", func(c *gin.Context) {
+		id := c.Param("id")
+		rule, err := s.store.GetAnimeDownloadRule(id)
+		if errors.Is(err, store.ErrNotFound) {
+			fail(c, 404, "订阅不存在")
+			return
+		}
+		if err != nil {
+			fail(c, 500, "读取下载配置失败")
+			return
+		}
+		items, err := s.store.ListAnimeCandidates(id)
+		if err != nil {
+			fail(c, 500, "读取下载候选失败")
+			return
+		}
+		c.JSON(200, gin.H{"rule": rule, "items": items, "limit": 1000})
+	})
+	v1.PUT("/subscriptions/anime/:id/downloads", func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+		var rule download.AnimeDownloadRule
+		if err := c.ShouldBindJSON(&rule); err != nil {
+			fail(c, 400, "下载配置格式无效")
+			return
+		}
+		if err := s.store.SetAnimeDownloadRule(c.Param("id"), rule); err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				fail(c, 404, "订阅不存在")
+			} else if _, ok := err.(*pan115.Error); ok {
+				downloadFailure(c, err)
+			} else {
+				fail(c, 400, "请填写具体的 115 目录 ID 和有效起始集数")
+			}
+			return
+		}
+		s.downloads.Wake()
+		c.JSON(200, rule)
+	})
 	v1.GET("/anime/sources/mikan/catalog", func(c *gin.Context) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 		defer cancel()

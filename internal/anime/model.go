@@ -48,16 +48,24 @@ type Subscription struct {
 	MetadataError     string  `json:"metadataError"`
 	Resources         []Entry `json:"resources"`
 	LastScheduledDate string  `json:"lastScheduledDate"`
+	Discovered        []Entry `json:"-"`
 }
 type Entry struct {
-	Title       string   `json:"title"`
-	URL         string   `json:"url"`
-	PublishedAt string   `json:"publishedAt"`
-	Episode     *float64 `json:"episode"`
-	Accepted    bool     `json:"accepted"`
-	Reason      string   `json:"reason"`
-	FileName    string   `json:"fileName"`
-	Feed        string   `json:"feed"`
+	BangumiID       string   `json:"bangumiId,omitempty"`
+	Title           string   `json:"title"`
+	URL             string   `json:"url"`
+	PublishedAt     string   `json:"publishedAt"`
+	Episode         *float64 `json:"episode"`
+	Accepted        bool     `json:"accepted"`
+	Reason          string   `json:"reason"`
+	FileName        string   `json:"fileName"`
+	Feed            string   `json:"feed"`
+	OriginalEpisode *float64 `json:"originalEpisode,omitempty"`
+	ResourceID      string   `json:"resourceId,omitempty"`
+	DownloadKind    string   `json:"downloadKind,omitempty"`
+	DetailURL       string   `json:"detailUrl,omitempty"`
+	GUID            string   `json:"guid,omitempty"`
+	ContentLength   int64    `json:"contentLength,omitempty"`
 }
 type Preview struct {
 	Items    []Entry  `json:"items"`
@@ -84,8 +92,11 @@ func Validate(d *Draft) error {
 	if !ValidID(d.BangumiID) {
 		return fmt.Errorf("请选择有效的 Bangumi 作品")
 	}
-	if d.Source != "mikan" && d.Source != "other" {
-		return fmt.Errorf("来源仅支持 Mikan 或其他 RSS")
+	if d.Source != "mikan" && d.Source != "other" && d.Source != "ani-bt" && d.Source != "anime-garden" {
+		return fmt.Errorf("动漫来源无效")
+	}
+	if e := ValidateSourceURL(*d); e != nil {
+		return e
 	}
 	if d.MikanID != "" && !ValidID(d.MikanID) {
 		return fmt.Errorf("Mikan ID 无效")
@@ -154,7 +165,13 @@ func Apply(d Draft, entries []Entry, offset int, seen map[float64]bool) []Entry 
 	}
 	for i := range entries {
 		e := &entries[i]
+		if e.BangumiID != "" && e.BangumiID != d.BangumiID {
+			e.Accepted = false
+			e.Reason = "资源属于其他 Bangumi 作品"
+			continue
+		}
 		e.Episode = episode(e.Title)
+		e.OriginalEpisode = e.Episode
 		e.Accepted = true
 		e.Reason = "匹配"
 		if e.URL == "" {

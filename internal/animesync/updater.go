@@ -129,6 +129,7 @@ func (u *Updater) refresh(ctx context.Context, id, scheduledDate string) (anime.
 	if e != nil {
 		s.LastError = "RSS 更新失败，请检查来源、规则或网络"
 	} else {
+		s.Discovered = p.Items
 		anime.UpdateProgress(&s, p)
 		s.LastError = ""
 	}

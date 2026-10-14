@@ -9,6 +9,18 @@ require (
 )
 
 require (
+	github.com/SheltonZhu/115driver v1.3.5 // indirect
+	github.com/aead/ecdh v0.2.0 // indirect
+	github.com/aliyun/aliyun-oss-go-sdk v3.0.2+incompatible // indirect
+	github.com/andreburgaud/crypt2go v1.1.0 // indirect
+	github.com/go-resty/resty/v2 v2.17.2 // indirect
+	github.com/pierrec/lz4/v4 v4.1.17 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
+	golang.org/x/time v0.14.0 // indirect
+)
+
+require (
 	github.com/Advik-B/cloudscraper v0.0.0-20260710121900-80f61f33698c // indirect
 	github.com/PuerkitoBio/goquery v1.8.1
 	github.com/andybalholm/brotli v1.1.1 // indirect

@@ -14,7 +14,9 @@ import (
 
 	"media-center/internal/anime"
 	"media-center/internal/animesync"
+	"media-center/internal/download"
 	"media-center/internal/httpapi"
+	"media-center/internal/organize"
 	"media-center/internal/pansoubridge"
 	"media-center/internal/store"
 )
@@ -62,7 +64,24 @@ func run() error {
 		updater.Run(schedulerCtx, func(message string) { _ = db.RecordLog("anime", "WARN", message) })
 	}()
 	defer func() { stopScheduler(); <-schedulerDone }()
-	server := &http.Server{Addr: addr, Handler: httpapi.NewRouterWithAnime(db, updater, search.Handler(), search.MetaHandler(), search.CheckHandler()), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	downloads := download.New(db)
+	downloads.FetchTorrent = anime.New().Fetch
+	downloadCtx, stopDownloads := context.WithCancel(context.Background())
+	downloadDone := make(chan struct{})
+	go func() {
+		defer close(downloadDone)
+		downloads.Run(downloadCtx, func(message string) { _ = db.RecordLog("download", "WARN", message) })
+	}()
+	defer func() { stopDownloads(); <-downloadDone }()
+	organizer := &organize.Service{Store: db, Factory: downloads.Factory}
+	organizeCtx, stopOrganize := context.WithCancel(context.Background())
+	organizeDone := make(chan struct{})
+	go func() {
+		defer close(organizeDone)
+		organizer.Run(organizeCtx, func(message string) { _ = db.RecordLog("organize", "WARN", message) })
+	}()
+	defer func() { stopOrganize(); <-organizeDone }()
+	server := &http.Server{Addr: addr, Handler: httpapi.NewRouterWithOrganizer(db, updater, downloads, organizer, search.Handler(), search.MetaHandler(), search.CheckHandler()), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.ListenAndServe() }()
 	stopped := make(chan os.Signal, 1)
