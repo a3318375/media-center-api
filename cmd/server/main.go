@@ -74,6 +74,7 @@ func run() error {
 	}()
 	defer func() { stopDownloads(); <-downloadDone }()
 	organizer := &organize.Service{Store: db, Factory: downloads.Factory}
+	handler := httpapi.NewRouterWithOrganizer(db, updater, downloads, organizer, search.Handler(), search.MetaHandler(), search.CheckHandler())
 	organizeCtx, stopOrganize := context.WithCancel(context.Background())
 	organizeDone := make(chan struct{})
 	go func() {
@@ -81,7 +82,7 @@ func run() error {
 		organizer.Run(organizeCtx, func(message string) { _ = db.RecordLog("organize", "WARN", message) })
 	}()
 	defer func() { stopOrganize(); <-organizeDone }()
-	server := &http.Server{Addr: addr, Handler: httpapi.NewRouterWithOrganizer(db, updater, downloads, organizer, search.Handler(), search.MetaHandler(), search.CheckHandler()), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.ListenAndServe() }()
 	stopped := make(chan os.Signal, 1)

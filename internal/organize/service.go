@@ -23,6 +23,7 @@ type Repository interface {
 	OrganizeUnfinished(string) ([]download.Task, error)
 }
 type Service struct {
+	Resolve func(context.Context, download.MediaContext, pan115.File) (download.MediaContext, error)
 	Store   Repository
 	Factory download.Factory
 	mu      sync.Mutex
@@ -85,7 +86,11 @@ func (s *Service) preview(ctx context.Context, id, date string, execute bool) (P
 			if value {
 				return Binding{}, fmt.Errorf("此目录仍有未完成下载任务")
 			}
-			return lookup(ctx, f)
+			b, e := lookup(ctx, f)
+			if e == nil && s.Resolve != nil && (b.Ready || r.AllowExisting) {
+				b.Media, e = s.Resolve(ctx, b.Media, f)
+			}
+			return b, e
 		}
 		seen := map[string]bool{}
 		for depth := 0; id != "" && id != "0"; depth++ {
@@ -104,7 +109,11 @@ func (s *Service) preview(ctx context.Context, id, date string, execute bool) (P
 			id = parent.ParentID
 		}
 		ancestorBlocked[f.ParentID] = false
-		return lookup(ctx, f)
+		b, e := lookup(ctx, f)
+		if e == nil && s.Resolve != nil && (b.Ready || r.AllowExisting) {
+			b.Media, e = s.Resolve(ctx, b.Media, f)
+		}
+		return b, e
 	})
 	if e != nil {
 		return p, e
@@ -169,9 +178,17 @@ func (s *Service) Tick(ctx context.Context) error {
 		return e
 	}
 	now := time.Now().In(time.FixedZone("Asia/Shanghai", 8*3600))
-	date := now.Format("2006-01-02")
+	running, e := s.Store.OrganizePlans(true)
+	if e != nil {
+		return e
+	}
+	activeRules := map[string]bool{}
+	for _, plan := range running {
+		activeRules[plan.Rule.ID] = true
+	}
 	for _, r := range rules {
-		if !Due(r, now) {
+		date := DueSlot(r, now)
+		if date == "" || activeRules[r.ID] {
 			continue
 		}
 		ran, e := s.Store.OrganizeRan(r.ID, date)
@@ -225,6 +242,9 @@ func (s *Service) Tick(ctx context.Context) error {
 			}
 			processed++
 			if e = s.execute(ctx, g, &p, i); e != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
 				p.State = "paused"
 				a.Error = e.Error()
 				p.Error = "有操作未完成，核对后恢复会先检查文件实际状态"

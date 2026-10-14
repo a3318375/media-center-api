@@ -14,6 +14,10 @@ var ErrNotFound = errors.New("organize record not found")
 var ErrConflict = errors.New("organize plan changed")
 
 type Rule struct {
+	Cron            string                 `json:"cron,omitempty"`
+	ScheduleError   string                 `json:"scheduleError,omitempty"`
+	Simple          bool                   `json:"simple,omitempty"`
+	TargetID        string                 `json:"targetId,omitempty"`
 	ID              string                 `json:"id"`
 	Name            string                 `json:"name"`
 	AccountID       string                 `json:"accountId"`
@@ -102,8 +106,14 @@ func ValidateRule(r Rule) error {
 	if count == 0 {
 		return fmt.Errorf("至少配置一种媒体目标目录")
 	}
-	if _, err := time.Parse("15:04", r.DailyAt); err != nil || len(r.DailyAt) != 5 {
-		return fmt.Errorf("整理时间使用北京时间 HH:MM")
+	if r.Cron != "" {
+		if _, err := ParseCron(r.Cron); err != nil && r.Enabled {
+			return err
+		}
+	} else if !r.Simple || r.Enabled {
+		if _, err := time.Parse("15:04", r.DailyAt); err != nil || len(r.DailyAt) != 5 {
+			return fmt.Errorf("整理时间使用北京时间 HH:MM")
+		}
 	}
 	if r.TypeHint != "auto" && r.TypeHint != "movie" && r.TypeHint != "tv" && r.TypeHint != "anime" && r.TypeHint != "program" {
 		return fmt.Errorf("媒体类型提示无效")
@@ -114,6 +124,9 @@ func ValidateRule(r Rule) error {
 	return nil
 }
 func (r Rule) Targets() []string {
+	if r.Simple {
+		return []string{r.TargetID}
+	}
 	out := []string{}
 	for _, id := range []string{r.MovieTargetID, r.TVTargetID, r.AnimeTargetID, r.ProgramTargetID} {
 		if id != "" {
@@ -123,6 +136,9 @@ func (r Rule) Targets() []string {
 	return out
 }
 func (r Rule) Target(kind string) string {
+	if r.Simple {
+		return r.TargetID
+	}
 	switch kind {
 	case "movie":
 		return r.MovieTargetID

@@ -50,11 +50,20 @@ func saveAnimeCandidates(tx *sql.Tx, s anime.Subscription, entries []anime.Entry
 	return nil
 }
 func (s *Store) SetAnimeDownloadRule(id string, r download.AnimeDownloadRule) error {
-	if !pan115.ValidDirectory(r.DirectoryID) || r.DirectoryID == "0" || r.FromEpisode < 1 || r.FromEpisode > 10000 {
+	if r.DirectoryID == "" {
+		r.DirectoryID = "library"
+	}
+	if r.DirectoryID != "library" && (!pan115.ValidDirectory(r.DirectoryID) || r.DirectoryID == "0") || r.FromEpisode < 1 || r.FromEpisode > 10000 {
 		return errors.New("需要具体的 115 目录 ID 和 1–10000 的起始集数")
 	}
 	cookie, secretErr := s.ReadSecret("115", "115.cookie")
 	account, accountErr := pan115.AccountID(cookie)
+	if r.Enabled && r.DirectoryID == "library" {
+		config, e := s.DownloadLibrary()
+		if e != nil || config.SourceID == "" || config.AccountID != account {
+			return errors.New("请先在设置中保存当前账号的未整理目录")
+		}
+	}
 	if r.Enabled && (secretErr != nil || accountErr != nil) {
 		return &pan115.Error{Code: "credential", Message: "启用下载前请保存有效的 115 Cookie", Certain: true}
 	}
@@ -83,6 +92,52 @@ func (s *Store) SetAnimeDownloadRule(id string, r download.AnimeDownloadRule) er
 		if _, err = tx.Exec(`INSERT INTO anime_download_rule_accounts(subscription_id,account_id) VALUES(?,?) ON CONFLICT(subscription_id) DO UPDATE SET account_id=excluded.account_id`, id, account); err != nil {
 			return err
 		}
+	}
+	return tx.Commit()
+}
+
+// Explicit refresh adopts automatic defaults only when no download choice was saved.
+func (s *Store) EnsureAnimeDownloadDefaults(id string) error {
+	cookie, _ := s.ReadSecret("115", "115.cookie")
+	account, _ := pan115.AccountID(cookie)
+	tx, e := s.db.Begin()
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback()
+	var raw string
+	var sub anime.Subscription
+	if e = tx.QueryRow(`SELECT data FROM anime_subscriptions WHERE id=?`, id).Scan(&raw); errors.Is(e, sql.ErrNoRows) {
+		return ErrNotFound
+	} else if e != nil {
+		return e
+	}
+	var count int
+	if e = tx.QueryRow(`SELECT COUNT(*) FROM anime_download_rules WHERE subscription_id=?`, id).Scan(&count); e != nil {
+		return e
+	}
+	if count > 0 {
+		return nil
+	}
+	if e = json.Unmarshal([]byte(raw), &sub); e != nil {
+		return e
+	}
+	sub.AutoDownload = true
+	if e = saveAnimeCandidates(tx, sub, sub.Resources); e != nil {
+		return e
+	}
+	data, e := json.Marshal(sub)
+	if e != nil {
+		return e
+	}
+	if _, e = tx.Exec(`UPDATE anime_subscriptions SET data=? WHERE id=?`, string(data), id); e != nil {
+		return e
+	}
+	if _, e = tx.Exec(`INSERT INTO anime_download_rules(subscription_id,enabled,directory_id,from_episode,updated_at) VALUES(?,1,'library',1,?)`, id, time.Now().UTC().Format(time.RFC3339Nano)); e != nil {
+		return e
+	}
+	if _, e = tx.Exec(`INSERT INTO anime_download_rule_accounts(subscription_id,account_id) VALUES(?,?)`, id, account); e != nil {
+		return e
 	}
 	return tx.Commit()
 }
@@ -121,6 +176,15 @@ func (s *Store) ListAnimeCandidates(id string) ([]download.Candidate, error) {
 	return items, rows.Err()
 }
 func (s *Store) ReadyAnimeCandidates(account string) ([]download.Candidate, error) {
+	config, e := s.DownloadLibrary()
+	if e != nil {
+		return nil, e
+	}
+	if config.AccountID == account && config.SourceID != "" {
+		if _, e = s.db.Exec(`UPDATE anime_download_rule_accounts SET account_id=? WHERE account_id='' AND subscription_id IN (SELECT id FROM anime_subscriptions WHERE json_extract(data,'$.autoDownload')=1)`, account); e != nil {
+			return nil, e
+		}
+	}
 	rows, err := s.db.Query(`SELECT c.data,r.directory_id FROM anime_download_candidates c JOIN anime_download_rules r ON r.subscription_id=c.subscription_id JOIN anime_download_rule_accounts ra ON ra.subscription_id=r.subscription_id JOIN anime_subscriptions a ON a.id=c.subscription_id WHERE ra.account_id=? AND r.enabled=1 AND json_extract(a.data,'$.enabled')=1 AND c.episode>=r.from_episode AND c.state IN ('pending','resolving','retry') AND NOT EXISTS(SELECT 1 FROM anime_download_candidates chosen WHERE chosen.subscription_id=c.subscription_id AND chosen.episode=c.episode AND chosen.task_id<>'') ORDER BY c.episode,c.created_at DESC LIMIT 5`, account)
 	if err != nil {
 		return nil, err

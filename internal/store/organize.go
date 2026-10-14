@@ -21,6 +21,25 @@ func organizeID() string {
 	}
 	return hex.EncodeToString(b)
 }
+func (s *Store) SimpleOrganizeRule() (organize.Rule, error) {
+	var raw string
+	var r organize.Rule
+	e := s.db.QueryRow(`SELECT data FROM organize_rules WHERE json_extract(data,'$.simple')=1 LIMIT 1`).Scan(&raw)
+	if errors.Is(e, sql.ErrNoRows) {
+		return r, organize.ErrNotFound
+	}
+	if e == nil {
+		e = json.Unmarshal([]byte(raw), &r)
+	}
+	return r, e
+}
+func (s *Store) DownloadLibrary() (download.LibraryConfig, error) {
+	r, e := s.SimpleOrganizeRule()
+	if errors.Is(e, organize.ErrNotFound) {
+		return download.LibraryConfig{}, nil
+	}
+	return download.LibraryConfig{AccountID: r.AccountID, SourceID: r.SourceID}, e
+}
 
 // Cancelled local monitoring does not prove that an already submitted remote job stopped.
 func (s *Store) OrganizeUnfinished(account string) ([]download.Task, error) {
@@ -194,6 +213,9 @@ func (s *Store) OrganizeRan(id, date string) (bool, error) {
 	return count > 0, e
 }
 func (s *Store) BindOrganizeFile(account string, f pan115.File, b organize.Binding) error {
+	if b.Media.Provider == "" {
+		b.Media.Provider = "manual"
+	}
 	if e := organize.ValidateMedia(b.Media); e != nil {
 		return e
 	}

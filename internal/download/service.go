@@ -30,6 +30,7 @@ type Service struct {
 	Store        Repository
 	Factory      Factory
 	mu           sync.Mutex
+	directoryMu  sync.Mutex
 	wake         chan struct{}
 	Now          func() time.Time
 	FetchTorrent func(context.Context, string) ([]byte, error)
@@ -183,9 +184,19 @@ func (s *Service) Run(ctx context.Context, report func(string)) {
 		}
 	}
 }
-func (s *Service) Tick(ctx context.Context) error {
+func (s *Service) Tick(ctx context.Context) (resultErr error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var submissions sync.WaitGroup
+	slots := make(chan struct{}, 5)
+	var errorMu sync.Mutex
+	var submitError error
+	defer func() {
+		submissions.Wait()
+		if resultErr == nil {
+			resultErr = submitError
+		}
+	}()
 	if err := s.processCandidates(ctx); err != nil {
 		return err
 	}
@@ -336,11 +347,17 @@ func (s *Service) Tick(ctx context.Context) error {
 				t.ErrorCode = "invalid_directory"
 				t.Error = "115 下载目标不是目录"
 			} else {
+				select {
+				case slots <- struct{}{}:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
 				t.State = "submitting"
 				t.SubmissionStartedAt = s.Now().UTC().Format(time.RFC3339Nano)
 				t.ErrorCode = ""
 				t.Error = ""
 				if e = s.Store.SaveDownload(t); e != nil {
+					<-slots
 					if errors.Is(e, ErrConflict) {
 						continue
 					}
@@ -348,29 +365,26 @@ func (s *Service) Tick(ctx context.Context) error {
 				}
 				t, e = s.Store.GetDownload(t.ID)
 				if e != nil {
+					<-slots
 					return e
 				}
 				if t.State != "submitting" {
+					<-slots
 					continue
 				}
-				hash, submitErr := gateway.Submit(t.URL, t.DirectoryID)
-				if submitErr != nil {
-					safe := pan115.SafeError(submitErr)
-					t.ErrorCode = safe.Code
-					t.Error = safe.Message
-					t.State = "unknown"
-					if safe.Certain {
-						t.State = "failed"
+				submissions.Add(1)
+				go func(task Task) {
+					defer submissions.Done()
+					defer func() { <-slots }()
+					if err := s.submitOffline(gateway, task); err != nil && !errors.Is(err, ErrConflict) {
+						errorMu.Lock()
+						if submitError == nil {
+							submitError = err
+						}
+						errorMu.Unlock()
 					}
-				} else if hash != t.ResourceID {
-					t.State = "unknown"
-					t.ErrorCode = "hash_mismatch"
-					t.Error = "115 返回的资源标识不匹配，需人工核对"
-				} else {
-					t.RemoteID = hash
-					t.State = "submitted"
-					index[hash] = pan115.RemoteTask{Hash: hash, Status: 0}
-				}
+				}(t)
+				continue
 			}
 		} else {
 			t.State = "unknown"
@@ -390,6 +404,35 @@ func (s *Service) Tick(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+func (s *Service) submitOffline(gateway pan115.Gateway, t Task) error {
+	// Check cancellations again at dispatch, and retain the original revision so a
+	// cancellation during the request cannot be overwritten by its response.
+	current, e := s.Store.GetDownload(t.ID)
+	if e != nil {
+		return e
+	}
+	if current.State != "submitting" || current.Revision != t.Revision {
+		return nil
+	}
+	hash, err := gateway.Submit(t.URL, t.DirectoryID)
+	if err != nil {
+		safe := pan115.SafeError(err)
+		t.ErrorCode = safe.Code
+		t.Error = safe.Message
+		t.State = "unknown"
+		if safe.Certain {
+			t.State = "failed"
+		}
+	} else if hash != t.ResourceID {
+		t.State = "unknown"
+		t.ErrorCode = "hash_mismatch"
+		t.Error = "115 返回的资源标识不匹配，需人工核对"
+	} else {
+		t.RemoteID = hash
+		t.State = "submitted"
+	}
+	return s.Store.SaveDownload(t)
 }
 func finite(n, low, high float64) float64 {
 	if math.IsNaN(n) || math.IsInf(n, 0) {

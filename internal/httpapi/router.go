@@ -63,6 +63,7 @@ func NewRouterWithServices(db *store.Store, updater *animesync.Updater, download
 }
 func NewRouterWithOrganizer(db *store.Store, updater *animesync.Updater, downloads *download.Service, organizer *organize.Service, resourceSearch ...gin.HandlerFunc) *gin.Engine {
 	api := &API{store: db, tmdb: tmdb.NewClient(), animeUpdater: updater, downloads: downloads, organizer: organizer}
+	organizer.Resolve = api.resolveOrganizeMedia
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 	router.Use(api.requestLog())

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"media-center/internal/anime"
+	"media-center/internal/pan115"
 	"strings"
 	"time"
 )
@@ -54,8 +55,21 @@ func (s *Store) ListAnime() ([]anime.Subscription, error) {
 	return out, nil
 }
 func (s *Store) CreateAnime(d anime.Draft) (anime.Subscription, error) {
+	return s.createAnime(d, false)
+}
+func (s *Store) CreateAnimeWithDownload(d anime.Draft) (anime.Subscription, error) {
+	return s.createAnime(d, true)
+}
+func (s *Store) createAnime(d anime.Draft, automatic bool) (anime.Subscription, error) {
+	account := ""
+	if automatic {
+		cookie, e := s.ReadSecret("115", "115.cookie")
+		if e == nil {
+			account, _ = pan115.AccountID(cookie)
+		}
+	}
 	anime.FillWeek(&d)
-	v := anime.Subscription{Draft: d}
+	v := anime.Subscription{Draft: d, AutoDownload: automatic}
 	id := make([]byte, 16)
 	if _, e := rand.Read(id); e != nil {
 		return v, e
@@ -67,7 +81,12 @@ func (s *Store) CreateAnime(d anime.Draft) (anime.Subscription, error) {
 	if e != nil {
 		return v, e
 	}
-	res, e := s.db.Exec(`INSERT INTO anime_subscriptions(id,bangumi_id,season,data,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(bangumi_id,season) DO NOTHING`, v.ID, d.BangumiID, d.Season, string(b), v.UpdatedAt)
+	tx, e := s.db.Begin()
+	if e != nil {
+		return v, e
+	}
+	defer tx.Rollback()
+	res, e := tx.Exec(`INSERT INTO anime_subscriptions(id,bangumi_id,season,data,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(bangumi_id,season) DO NOTHING`, v.ID, d.BangumiID, d.Season, string(b), v.UpdatedAt)
 	if e != nil {
 		return v, e
 	}
@@ -75,6 +94,18 @@ func (s *Store) CreateAnime(d anime.Draft) (anime.Subscription, error) {
 	if e == nil && n == 0 {
 		return v, ErrSubscriptionExists
 	}
+	if e != nil {
+		return v, e
+	}
+	if automatic {
+		if _, e = tx.Exec(`INSERT INTO anime_download_rules(subscription_id,enabled,directory_id,from_episode,updated_at) VALUES(?,1,'library',1,?)`, v.ID, v.CreatedAt); e != nil {
+			return v, e
+		}
+		if _, e = tx.Exec(`INSERT INTO anime_download_rule_accounts(subscription_id,account_id) VALUES(?,?)`, v.ID, account); e != nil {
+			return v, e
+		}
+	}
+	e = tx.Commit()
 	return v, e
 }
 func (s *Store) SetAnimeEnabled(id string, enabled bool) (anime.Subscription, error) {

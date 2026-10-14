@@ -166,7 +166,7 @@ func (s *API) mountAnime(v1 *gin.RouterGroup) {
 			fail(c, 400, e.Error())
 			return
 		}
-		out, e := s.store.CreateAnime(d)
+		out, e := s.store.CreateAnimeWithDownload(d)
 		if errors.Is(e, store.ErrSubscriptionExists) {
 			fail(c, 409, "该 Bangumi 作品的这一季已订阅，请勿重复添加")
 			return
@@ -182,9 +182,18 @@ func (s *API) mountAnime(v1 *gin.RouterGroup) {
 		} else if saved, loadErr := s.store.GetAnime(out.ID); loadErr == nil {
 			out = saved
 		}
+		s.downloads.Wake()
 		c.JSON(201, out)
 	})
 	v1.POST("/subscriptions/anime/:id/refresh", func(c *gin.Context) {
+		if e := s.store.EnsureAnimeDownloadDefaults(c.Param("id")); e != nil {
+			if errors.Is(e, store.ErrNotFound) {
+				fail(c, 404, "订阅不存在")
+			} else {
+				fail(c, 500, "初始化下载规则失败")
+			}
+			return
+		}
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 90*time.Second)
 		defer cancel()
 		out, e := s.animeUpdater.Refresh(ctx, c.Param("id"))
@@ -200,6 +209,7 @@ func (s *API) mountAnime(v1 *gin.RouterGroup) {
 			fail(c, 502, e.Error())
 			return
 		}
+		s.downloads.Wake()
 		c.JSON(200, out)
 	})
 	v1.PATCH("/subscriptions/anime/:id", func(c *gin.Context) {

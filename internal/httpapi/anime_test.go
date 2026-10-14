@@ -61,6 +61,10 @@ func TestAnimeAuthenticatedCreateConflictAndPause(t *testing.T) {
 	if saved.LastCheckedAt == "" {
 		t.Fatal("creation did not refresh RSS")
 	}
+	rule, e := db.GetAnimeDownloadRule(saved.ID)
+	if e != nil || !rule.Enabled || rule.DirectoryID != "library" || rule.FromEpisode != 1 || !saved.AutoDownload {
+		t.Fatalf("new subscription did not auto-enable download: %+v %v", rule, e)
+	}
 	refreshPath := "/api/v1/subscriptions/anime/" + saved.ID + "/refresh"
 	if got := request("POST", refreshPath, nil, false); got.Code != 401 {
 		t.Fatal("refresh lacks auth")

@@ -100,9 +100,23 @@ func (a *API) mountDownloads(v1 *gin.RouterGroup) {
 			fail(c, 400, "下载请求格式无效")
 			return
 		}
+		automatic := r.DirectoryID == ""
+		if automatic {
+			r.DirectoryID = "1"
+		}
 		if _, err := download.Validate(&r); err != nil {
 			fail(c, 400, err.Error())
 			return
+		}
+		if automatic {
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 45*time.Second)
+			defer cancel()
+			var err error
+			r.DirectoryID, err = a.downloads.ResolveLibraryDirectory(ctx, r.Reference.Media.Type)
+			if err != nil {
+				organizeFailure(c, err)
+				return
+			}
 		}
 		t, created, err := a.downloads.Enqueue(r)
 		if err != nil {

@@ -56,6 +56,19 @@ func (s *Service) processCandidates(ctx context.Context) error {
 		return nil
 	}
 	for _, c := range items {
+		if c.DirectoryID == "library" {
+			repo, ok := s.Store.(LibraryRepository)
+			if !ok {
+				continue
+			}
+			config, e := repo.DownloadLibrary()
+			if e != nil {
+				return e
+			}
+			if config.SourceID == "" || config.AccountID != account {
+				continue
+			}
+		}
 		err = nil
 		if err = ctx.Err(); err != nil {
 			return err
@@ -100,7 +113,13 @@ func (s *Service) processCandidates(ctx context.Context) error {
 			}
 			if err == nil {
 				var task Task
-				task, _, err = s.enqueue(Request{Kind: "offline", URL: magnet, DirectoryID: c.DirectoryID, Reference: c.Reference}, account)
+				directory := c.DirectoryID
+				if directory == "library" {
+					directory, err = s.ResolveLibraryDirectory(ctx, "anime")
+				}
+				if err == nil {
+					task, _, err = s.enqueue(Request{Kind: "offline", URL: magnet, DirectoryID: directory, Reference: c.Reference}, account)
+				}
 				if err == nil {
 					c.State = "queued"
 					c.TaskID = task.ID

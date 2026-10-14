@@ -66,6 +66,40 @@ func TestDownloadsAuthenticatedSharedQueueAndCancellation(t *testing.T) {
 	if w := call("POST", "/api/v1/organize/plans/missing/start", nil, token); w.Code != 404 {
 		t.Fatal(w.Code, w.Body)
 	}
+	config := map[string]any{"sourceId": "100", "targetId": "200", "cron": "*/30 * * * *", "enabled": false}
+	if w := call("PUT", "/api/v1/organize/config", config, key); w.Code != 401 {
+		t.Fatal("API key changed library settings", w.Code)
+	}
+	if w := call("PUT", "/api/v1/organize/config", config, token); w.Code != 200 {
+		t.Fatal(w.Code, w.Body)
+	}
+	if w := call("GET", "/api/v1/organize/config", nil, token); w.Code != 200 {
+		t.Fatal(w.Code, w.Body)
+	}
+	simple, e := db.SimpleOrganizeRule()
+	if e != nil || !simple.Recursive || simple.TargetID != "200" || simple.SourceID != "100" || simple.Cron != "*/30 * * * *" {
+		t.Fatalf("%+v %v", simple, e)
+	}
+	if !simple.Enabled {
+		t.Fatal("valid Cron did not enable schedule")
+	}
+	for _, cron := range []string{"not a cron", ""} {
+		config["cron"] = cron
+		config["enabled"] = true
+		if w := call("PUT", "/api/v1/organize/config", config, token); w.Code != 200 {
+			t.Fatal(w.Code, w.Body)
+		}
+		saved, e := db.SimpleOrganizeRule()
+		if e != nil || saved.Enabled || saved.Cron != cron {
+			t.Fatalf("invalid/empty Cron kept schedule active: %+v %v", saved, e)
+		}
+		if cron != "" && saved.ScheduleError == "" {
+			t.Fatal("invalid Cron missing explanation")
+		}
+		if cron == "" && saved.ScheduleError != "" {
+			t.Fatal("blank Cron displayed invalid error")
+		}
+	}
 	request := download.Request{Kind: "offline", URL: "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567", DirectoryID: "100", Reference: download.Reference{Source: "media_search", SourceID: "tmdb:movie:99", Media: download.MediaContext{Type: "movie", Provider: "tmdb", ProviderID: "99"}}}
 	w := call("POST", "/api/v1/downloads", request, token)
 	if w.Code != 202 {

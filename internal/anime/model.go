@@ -35,6 +35,7 @@ type Draft struct {
 	Standby       []Feed   `json:"standby"`
 }
 type Subscription struct {
+	AutoDownload bool `json:"autoDownload,omitempty"`
 	Draft
 	ID                string  `json:"id"`
 	CreatedAt         string  `json:"createdAt"`

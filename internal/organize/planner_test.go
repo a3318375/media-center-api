@@ -77,6 +77,22 @@ func TestNamingAndEpisodeSafety(t *testing.T) {
 		t.Fatalf("%+v %v", m, e)
 	}
 }
+
+func TestSimpleRuleUsesOneTargetAndCategoryFolders(t *testing.T) {
+	r := Rule{Name: "媒体整理", Simple: true, SourceID: "10", TargetID: "20", DailyAt: "03:00", Recursive: true, TypeHint: "auto"}
+	if e := ValidateRule(r); e != nil {
+		t.Fatal(e)
+	}
+	m := download.MediaContext{Type: "anime", Title: "Show", Season: 1, Episodes: []int{2}}
+	dirs, name, e := naming(r, m, "test.mkv")
+	if e != nil || len(dirs) != 3 || dirs[0] != "动漫" || dirs[2] != "Season 01" || name != "Show - S01E02.mkv" || r.Target("anime") != "20" {
+		t.Fatalf("%+v %s %v", dirs, name, e)
+	}
+	r.TargetID = "10"
+	if e = ValidateRule(r); e == nil {
+		t.Fatal("same roots accepted")
+	}
+}
 func TestBatchArtifactDoesNotReuseOneEpisode(t *testing.T) {
 	task := download.Task{State: "completed", References: []download.Reference{{Media: download.MediaContext{Type: "anime", Title: "Show", Episodes: []int{2}}}}, Artifacts: []pan115.File{{ID: "1", Name: "Show - 01.mkv", Size: 10}, {ID: "2", Name: "Show - 02.mkv", Size: 20}}}
 	b, e := MetadataForArtifact(task, task.Artifacts[0])

@@ -113,6 +113,9 @@ func naming(r Rule, m download.MediaContext, name string) ([]string, string, err
 	}
 	base := folder
 	directories := []string{folder}
+	if r.Simple {
+		directories = append([]string{download.Category(m.Type)}, directories...)
+	}
 	if m.Type != "movie" {
 		if len(m.Episodes) != 1 {
 			return nil, "", fmt.Errorf("缺少集数")
