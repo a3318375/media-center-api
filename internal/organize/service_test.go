@@ -65,6 +65,55 @@ func (f *files) MoveFile(id, parent string) error {
 	}
 	return nil
 }
+func (f *files) DeleteEmptyDirectory(id string) error {
+	items, _ := f.ListFiles(id)
+	if len(items) != 0 || !f.data[id].Directory {
+		return fmt.Errorf("not empty directory")
+	}
+	delete(f.data, id)
+	return nil
+}
+
+func TestCleanupEmptyDirectories(t *testing.T) {
+	db, g, s, r := setup(t)
+	r.Recursive = true
+	var err error
+	r, err = db.SaveOrganizeRule(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.data["30"] = pan115.File{ID: "30", ParentID: "10", Directory: true}
+	g.data["31"] = pan115.File{ID: "31", ParentID: "30", Directory: true}
+	g.data["40"] = pan115.File{ID: "40", ParentID: "10", Directory: true}
+	g.data["41"] = pan115.File{ID: "41", ParentID: "40", Name: "readme.txt", Size: 1}
+	file := g.data["1"]
+	file.ParentID = "31"
+	g.data["1"] = file
+	p, err := s.Preview(context.Background(), r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Start(p.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Tick(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	p, _ = db.OrganizePlan(p.ID)
+	if p.State != "completed" {
+		t.Fatalf("%+v", p)
+	}
+	for _, id := range []string{"30", "31"} {
+		if _, exists := g.data[id]; exists {
+			t.Fatalf("empty directory %s remains", id)
+		}
+	}
+	for _, id := range []string{"10", "20", "40", "41", "1"} {
+		if _, exists := g.data[id]; !exists {
+			t.Fatalf("protected/nonempty item %s deleted", id)
+		}
+	}
+}
 func setup(t *testing.T) (*store.Store, *files, *organize.Service, organize.Rule) {
 	t.Helper()
 	db, e := store.Open(t.TempDir())

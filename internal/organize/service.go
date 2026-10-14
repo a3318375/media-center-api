@@ -268,6 +268,9 @@ func (s *Service) Tick(ctx context.Context) error {
 				continue
 			}
 			p.State = "completed"
+			if e = s.cleanupEmptyDirectories(ctx, g, p.Rule); e != nil {
+				p.Issues = append(p.Issues, Issue{Code: "cleanup", Message: "空目录清理未完成：" + e.Error()})
+			}
 			for _, a := range p.Actions {
 				if a.State == "conflict" {
 					p.State = "completed_with_issues"

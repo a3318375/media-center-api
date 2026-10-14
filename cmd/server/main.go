@@ -75,6 +75,11 @@ func run() error {
 	defer func() { stopDownloads(); <-downloadDone }()
 	organizer := &organize.Service{Store: db, Factory: downloads.Factory}
 	handler := httpapi.NewRouterWithOrganizer(db, updater, downloads, organizer, search.Handler(), search.MetaHandler(), search.CheckHandler())
+	if staticDir := os.Getenv("MEDIA_CENTER_WEB_DIR"); staticDir != "" {
+		if err := httpapi.MountFrontend(handler, staticDir); err != nil {
+			return err
+		}
+	}
 	organizeCtx, stopOrganize := context.WithCancel(context.Background())
 	organizeDone := make(chan struct{})
 	go func() {
