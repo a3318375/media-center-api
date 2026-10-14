@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"media-center/internal/anime"
+	"media-center/internal/animesync"
 	"media-center/internal/httpapi"
 	"media-center/internal/pansoubridge"
 	"media-center/internal/store"
@@ -52,7 +54,15 @@ func run() error {
 	if addr == "" {
 		addr = ":18080"
 	}
-	server := &http.Server{Addr: addr, Handler: httpapi.NewRouter(db, search.Handler(), search.MetaHandler(), search.CheckHandler()), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
+	updater := animesync.New(db, anime.New())
+	schedulerCtx, stopScheduler := context.WithCancel(context.Background())
+	schedulerDone := make(chan struct{})
+	go func() {
+		defer close(schedulerDone)
+		updater.Run(schedulerCtx, func(message string) { _ = db.RecordLog("anime", "WARN", message) })
+	}()
+	defer func() { stopScheduler(); <-schedulerDone }()
+	server := &http.Server{Addr: addr, Handler: httpapi.NewRouterWithAnime(db, updater, search.Handler(), search.MetaHandler(), search.CheckHandler()), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
 	serverDone := make(chan error, 1)
 	go func() { serverDone <- server.ListenAndServe() }()
 	stopped := make(chan os.Signal, 1)

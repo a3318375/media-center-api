@@ -47,3 +47,16 @@ CREATE TABLE IF NOT EXISTS activity_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_activity_logs_time ON activity_logs(id DESC);
 
+
+CREATE TABLE IF NOT EXISTS anime_subscriptions (
+ id TEXT PRIMARY KEY,
+ bangumi_id TEXT NOT NULL,
+ season INTEGER NOT NULL,
+ data TEXT NOT NULL,
+ updated_at TEXT NOT NULL,
+ UNIQUE(bangumi_id, season)
+);
+
+CREATE TABLE IF NOT EXISTS anime_schedule_runs (
+ run_date TEXT PRIMARY KEY
+);

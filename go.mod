@@ -10,7 +10,7 @@ require (
 
 require (
 	github.com/Advik-B/cloudscraper v0.0.0-20260710121900-80f61f33698c // indirect
-	github.com/PuerkitoBio/goquery v1.8.1 // indirect
+	github.com/PuerkitoBio/goquery v1.8.1
 	github.com/andybalholm/brotli v1.1.1 // indirect
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/dlclark/regexp2 v1.11.4 // indirect

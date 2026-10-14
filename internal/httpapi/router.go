@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"media-center/internal/anime"
+	"media-center/internal/animesync"
 	"media-center/internal/discovery"
 	"media-center/internal/pansoubridge"
 	"media-center/internal/providers/douban"
@@ -24,6 +26,7 @@ import (
 )
 
 type API struct {
+	animeUpdater    *animesync.Updater
 	credentialMu    sync.Mutex
 	tmdbFingerprint [32]byte
 	discoveryMu     sync.Mutex
@@ -46,7 +49,10 @@ type authUser struct {
 }
 
 func NewRouter(db *store.Store, resourceSearch ...gin.HandlerFunc) *gin.Engine {
-	api := &API{store: db, tmdb: tmdb.NewClient()}
+	return NewRouterWithAnime(db, animesync.New(db, anime.New()), resourceSearch...)
+}
+func NewRouterWithAnime(db *store.Store, updater *animesync.Updater, resourceSearch ...gin.HandlerFunc) *gin.Engine {
+	api := &API{store: db, tmdb: tmdb.NewClient(), animeUpdater: updater}
 	router := gin.New()
 	router.Use(gin.Logger(), gin.Recovery())
 	router.Use(api.requestLog())
@@ -64,6 +70,7 @@ func NewRouter(db *store.Store, resourceSearch ...gin.HandlerFunc) *gin.Engine {
 	settings := router.Group("/api/settings", api.requireUser())
 	settings.GET("/:section", api.getSettings)
 	settings.PUT("/:section", api.putSettings)
+	settings.POST("/:section/secrets/reveal", api.revealSetting)
 	router.GET("/api/emby/dashboard", api.requireUser(), api.embyDashboard)
 	router.GET("/api/emby/items/:id/image", api.requireUser(), api.embyImage)
 	router.GET("/api/media/providers", api.requireUser(), api.mediaProviders)
@@ -82,6 +89,7 @@ func NewRouter(db *store.Store, resourceSearch ...gin.HandlerFunc) *gin.Engine {
 	// and managed API keys. Feature modules (search, downloads, etc.) mount here.
 	v1 := router.Group("/api/v1", api.requireAPI())
 	v1.GET("/whoami", api.apiWhoAmI)
+	api.mountAnime(v1)
 	if len(resourceSearch) > 0 && resourceSearch[0] != nil {
 		v1.POST("/resources/search", resourceSearch[0])
 	}
@@ -448,7 +456,7 @@ func (a *API) getSettings(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "读取配置失败")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"values": values, "configuredSecrets": secrets})
+	a.settingsResponse(c, section, values, secrets)
 }
 
 func (a *API) putSettings(c *gin.Context) {
@@ -478,10 +486,13 @@ func (a *API) putSettings(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "配置保存失败："+err.Error())
 		return
 	}
+	if section == "115" && a.animeUpdater != nil {
+		a.animeUpdater.Wake()
+	}
 	values, secrets, err := a.store.ReadSettings(section)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "配置已保存但读取状态失败")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"values": values, "configuredSecrets": secrets})
+	a.settingsResponse(c, section, values, secrets)
 }

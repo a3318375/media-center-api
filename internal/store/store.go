@@ -396,7 +396,7 @@ func (s *Store) ReadSettings(section string) (map[string]any, []string, error) {
 	return values, secrets, rows.Err()
 }
 
-// ReadSecret is for server-side provider adapters only. Never expose its result through an API response.
+// ReadSecret decrypts service credentials for adapters and the explicit administrator reveal endpoint.
 func (s *Store) ReadSecret(section, key string) (string, error) {
 	var value string
 	err := s.db.QueryRow(`SELECT value FROM settings WHERE section=? AND setting_key=? AND is_secret=1`, section, key).Scan(&value)
